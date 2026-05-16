@@ -6,4 +6,6 @@ General modules for Lampac
   branch: main
   modules:
     - LMG.SubsStreamdata
+    - LMG.DooFlix
+    - LMG.HDMovie2
 ```
