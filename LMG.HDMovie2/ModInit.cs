@@ -1,4 +1,6 @@
 using Shared.Models.Events;
+using Shared.Models.Base;
+using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using Shared.Models.Online.Settings;
 using Shared.Services;

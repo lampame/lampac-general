@@ -38,7 +38,7 @@ public class DooFlixController : BaseENGController
         if (play)
             return RedirectToPlay(stream);
 
-        return ContentTo(VideoTpl.ToJson("play", stream, result.title ?? "DooFlix", vast: init.vast, headers: init.streamproxy ? null : result.headers, httpContext: HttpContext));
+        return ContentTo(VideoTpl.ToJson("play", stream, result.title ?? "DooFlix", vast: init.vast, headers: init.streamproxy ? null : result.headers));
     }
 
     async Task<(string url, string title, List<HeadersModel> headers)> GetStream(long id, int s, int e)

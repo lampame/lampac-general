@@ -43,7 +43,7 @@ public class HDMovie2Controller : BaseENGController
         if (play)
             return RedirectToPlay(stream);
 
-        return ContentTo(VideoTpl.ToJson("play", stream, result.title ?? "HDMovie2", vast: init.vast, headers: init.streamproxy ? null : result.headers, httpContext: HttpContext));
+        return ContentTo(VideoTpl.ToJson("play", stream, result.title ?? "HDMovie2", vast: init.vast, headers: init.streamproxy ? null : result.headers));
     }
 
     async Task<(string url, string title, List<HeadersModel> headers)> GetStream(long id, int s, int e)
@@ -126,11 +126,13 @@ public class HDMovie2Controller : BaseENGController
         if (candidates.Count == 0)
             candidates = items;
 
-        return candidates
+        var match = candidates
             .OrderByDescending(i => i.clean == target)
             .ThenByDescending(i => i.clean.StartsWith(target) || target.StartsWith(i.clean))
             .ThenBy(i => Math.Abs(i.clean.Length - target.Length))
             .FirstOrDefault();
+
+        return (match.url, match.title, match.year);
     }
 
     async Task<string> GetPostId(HDMovie2Settings conf, string url)
