@@ -81,6 +81,7 @@ public class DooFlixController : BaseENGController
             }
             catch
             {
+                Console.WriteLine($"LMG.DooFlix: stream resolve error for id={id}, s={s}, e={e}");
                 return default;
             }
         }
