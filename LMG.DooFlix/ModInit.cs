@@ -37,9 +37,10 @@ public class ModInit : IModuleLoaded
 
     static void UpdateConf()
     {
-        conf = ModuleInvoke.Init("LMG.DooFlix", new DooFlixSettings("LMG.DooFlix", "https://panel.watchkaroabhi.com")
+        conf = ModuleInvoke.Init("LMG.DooFlix", new DooFlixSettings("lmg_dooflix", "https://panel.watchkaroabhi.com")
         {
             enable = true,
+            enabled = true,
             displayname = "DooFlix",
             displayindex = 1040,
             streamproxy = true,

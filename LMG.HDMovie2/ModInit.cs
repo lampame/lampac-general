@@ -39,9 +39,10 @@ public class ModInit : IModuleLoaded
 
     static void UpdateConf()
     {
-        conf = ModuleInvoke.Init("LMG.HDMovie2", new HDMovie2Settings("LMG.HDMovie2", "https://hdmovie2.com.se")
+        conf = ModuleInvoke.Init("LMG.HDMovie2", new HDMovie2Settings("lmg_hdmovie2", "https://hdmovie2.com.se")
         {
             enable = true,
+            enabled = true,
             displayname = "HDMovie2",
             displayindex = 1039,
             streamproxy = true,
