@@ -57,7 +57,10 @@ public static class SubsInvoke
             // Parse API response
             var response = JsonSerializer.Deserialize<StreamdataResponse>(json);
             if (response?.DefaultSubs == null || response.DefaultSubs.Count == 0)
+            {
+                Console.WriteLine($"LMG.SubsStreamdata: no subs for {tmdb} ({type})");
                 return null;
+            }
 
             // Convert to SubtitleDto list
             var result = new List<SubtitleDto>(response.DefaultSubs.Count);
@@ -70,7 +73,10 @@ public static class SubsInvoke
             }
 
             if (result.Count == 0)
+            {
+                Console.WriteLine($"LMG.SubsStreamdata: empty parsed subs for {tmdb} ({type})");
                 return null;
+            }
 
             // Store in cache
             cache.Set(cacheKey, result,
@@ -80,6 +86,7 @@ public static class SubsInvoke
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"LMG.SubsStreamdata: API error for {tmdb} ({type}): {ex.Message}");
             Log.Warning(ex, "SubsStreamdata API error for tmdb={Tmdb}", tmdb);
             return null;
         }

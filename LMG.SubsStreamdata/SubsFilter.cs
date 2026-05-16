@@ -36,6 +36,12 @@ public static class SubtitleMiddleware
             return;
         }
 
+        if (context.Request.Path.StartsWithSegments("/proxy"))
+        {
+            await next();
+            return;
+        }
+
         // Extract tmdb from query params
         var query = context.Request.Query;
         string tmdb = query["tmdb"];
@@ -44,6 +50,10 @@ public static class SubtitleMiddleware
             if (query["source"] == "tmdb")
                 tmdb = query["id"];
         }
+        if (string.IsNullOrEmpty(tmdb))
+            tmdb = query["tmdb_id"];
+        if (string.IsNullOrEmpty(tmdb))
+            tmdb = query["id"];
         if (string.IsNullOrEmpty(tmdb))
             tmdb = query["imdb_id"];
 
@@ -55,6 +65,7 @@ public static class SubtitleMiddleware
 
         string season = query["s"];
         string episode = query["e"];
+        string type = !string.IsNullOrEmpty(season) || query["serial"] == "1" ? "tv" : "movie";
 
         // Buffer the response
         var originalBody = context.Response.Body;
@@ -79,7 +90,7 @@ public static class SubtitleMiddleware
             // Case 1: Pure JSON VideoDto (starts with '{')
             if (responseBody.TrimStart().StartsWith("{") && responseBody.Contains("\"method\""))
             {
-                modified = InjectIntoJson(responseBody, tmdb, season, episode);
+                modified = InjectIntoJson(responseBody, tmdb, type, season, episode);
                 if (modified == null)
                 {
                     await RestoreBuffer(context, originalBody, buffer);
@@ -89,7 +100,7 @@ public static class SubtitleMiddleware
             // Case 2: HTML with data-json attributes (LME module responses)
             else if (responseBody.Contains("data-json="))
             {
-                modified = InjectIntoHtml(responseBody, tmdb, season, episode);
+                modified = InjectIntoHtml(responseBody, tmdb, type, season, episode);
                 if (modified == null)
                 {
                     await RestoreBuffer(context, originalBody, buffer);
@@ -123,12 +134,12 @@ public static class SubtitleMiddleware
     }
 
     /// <summary>Inject subtitles into a pure JSON VideoDto response.</summary>
-    static string InjectIntoJson(string json, string tmdb, string season, string episode)
+    static string InjectIntoJson(string json, string tmdb, string type, string season, string episode)
     {
         var node = JsonNode.Parse(json);
         if (node == null) return null;
 
-        var externalSubs = SubsInvoke.FetchSubtitles(tmdb, string.IsNullOrEmpty(season) ? "movie" : "tv", season, episode);
+        var externalSubs = SubsInvoke.FetchSubtitles(tmdb, type, season, episode);
         if (externalSubs == null || externalSubs.Count == 0)
             return null;
 
@@ -148,9 +159,9 @@ public static class SubtitleMiddleware
     }
 
     /// <summary>Inject subtitles into HTML with data-json attributes.</summary>
-    static string InjectIntoHtml(string html, string tmdb, string season, string episode)
+    static string InjectIntoHtml(string html, string tmdb, string type, string season, string episode)
     {
-        var externalSubs = SubsInvoke.FetchSubtitles(tmdb, string.IsNullOrEmpty(season) ? "movie" : "tv", season, episode);
+        var externalSubs = SubsInvoke.FetchSubtitles(tmdb, type, season, episode);
         if (externalSubs == null || externalSubs.Count == 0)
             return null;
 
