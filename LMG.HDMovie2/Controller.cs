@@ -76,6 +76,7 @@ public class HDMovie2Controller : BaseENGController
             }
             catch
             {
+                Console.WriteLine($"LMG.HDMovie2: stream resolve error for id={id}, s={s}, e={e}");
                 return default;
             }
         }
@@ -95,7 +96,7 @@ public class HDMovie2Controller : BaseENGController
 
     async Task<(string url, string title, int year)> Search(HDMovie2Settings conf, string title, int year)
     {
-        string html = await Http.Get<string>($"{conf.host}/?s={HttpUtility.UrlEncode(title)}", referer: $"{conf.host}/", timeoutSeconds: conf.httptimeout, headers: httpHeaders(conf), proxy: proxy, statusCodeOK: false);
+        string html = await GetHtml($"{conf.host}/?s={HttpUtility.UrlEncode(title)}", $"{conf.host}/");
         if (string.IsNullOrEmpty(html))
             return default;
 
@@ -137,7 +138,7 @@ public class HDMovie2Controller : BaseENGController
 
     async Task<string> GetPostId(HDMovie2Settings conf, string url)
     {
-        string html = await Http.Get<string>(url, referer: $"{conf.host}/", timeoutSeconds: conf.httptimeout, headers: httpHeaders(conf), proxy: proxy, statusCodeOK: false);
+        string html = await GetHtml(url, $"{conf.host}/");
         return Regex.Match(html ?? string.Empty, "postid-(\\d+)", RegexOptions.IgnoreCase).Groups[1].Value;
     }
 
@@ -182,7 +183,7 @@ public class HDMovie2Controller : BaseENGController
             ("User-Agent", UserAgent),
             ("Referer", $"{conf.host}/")
         );
-        string html = await Http.Get<string>(player, timeoutSeconds: conf.httptimeout, headers: playerHeaders, proxy: proxy, statusCodeOK: false);
+        string html = await GetHtml(player, $"{conf.host}/", playerHeaders);
         string streamPath = WebUtility.HtmlDecode(Regex.Match(html ?? string.Empty, "data-stream-url=\"([^\"]+)\"", RegexOptions.IgnoreCase).Groups[1].Value);
         if (string.IsNullOrEmpty(streamPath))
             return default;
@@ -204,7 +205,7 @@ public class HDMovie2Controller : BaseENGController
             ("User-Agent", UserAgent),
             ("Referer", $"{conf.host}/")
         );
-        string html = await Http.Get<string>(player, timeoutSeconds: conf.httptimeout, headers: playerHeaders, proxy: proxy, statusCodeOK: false);
+        string html = await GetHtml(player, $"{conf.host}/", playerHeaders);
         string hash = Regex.Match(html ?? string.Empty, "sniff\\s*\\(\\s*[\"'][^\"']+[\"']\\s*,\\s*[\"'][^\"']+[\"']\\s*,\\s*[\"']([a-f0-9]+)[\"']", RegexOptions.IgnoreCase).Groups[1].Value;
         if (string.IsNullOrEmpty(hash))
             return default;
@@ -223,5 +224,22 @@ public class HDMovie2Controller : BaseENGController
 
         value = Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9\s]", " ");
         return Regex.Replace(value, @"\s+", " ").Trim();
+    }
+
+    async Task<string> GetHtml(string url, string referer, List<HeadersModel> headers = null)
+    {
+        string html = null;
+
+        await Http.GetSpan(
+            url,
+            span => html = span.ToString(),
+            referer: referer,
+            timeoutSeconds: ModInit.conf.httptimeout,
+            headers: headers ?? httpHeaders(ModInit.conf),
+            proxy: proxy,
+            statusCodeOK: false
+        );
+
+        return html;
     }
 }

@@ -16,7 +16,7 @@ public class OnlineApi : IModuleOnline
 
         if ((args.original_language == null || args.original_language == "en") && CoreInit.conf.disableEng == false)
         {
-            if (args.source != null && (args.source is "tmdb" or "cub") && long.TryParse(args.id, out long id) && id > 0)
+            if (args.serial != 1 && args.source != null && (args.source is "tmdb" or "cub") && long.TryParse(args.id, out long id) && id > 0)
             {
                 var init = ModInit.conf;
                 if (init?.enable == true && !init.rip)
