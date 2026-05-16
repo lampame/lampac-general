@@ -1,0 +1,6 @@
+{
+  "enable": true,
+  "version": 3,
+  "initspace": "LMG.DooFlix.ModInit",
+  "online": "LMG.DooFlix.OnlineApi"
+}
