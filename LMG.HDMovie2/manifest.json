@@ -1,0 +1,6 @@
+{
+  "enable": true,
+  "version": 3,
+  "initspace": "LMG.HDMovie2.ModInit",
+  "online": "LMG.HDMovie2.OnlineApi"
+}
