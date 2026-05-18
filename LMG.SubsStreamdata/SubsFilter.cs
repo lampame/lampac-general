@@ -1,26 +1,20 @@
 using System;
 using System.IO;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
-using Shared.Models.Templates;
 
 namespace LMG.SubsStreamdata;
 
 /// <summary>
-/// ASP.NET Core middleware that intercepts responses containing VideoDto JSON
-/// (pure JSON or HTML data-json attributes) and injects external subtitles.
+/// ASP.NET Core middleware that intercepts VideoDto responses
+/// and injects subtitles_call URL for async subtitle loading.
+/// No HTTP calls during response — subtitles fetched on demand via controller.
 /// </summary>
 public static class SubtitleMiddleware
 {
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     public static async Task Handle(HttpContext context, Func<Task> next)
     {
         if (!ModInit.Enabled)
@@ -55,6 +49,12 @@ public static class SubtitleMiddleware
 
         string season = query["s"];
         string episode = query["e"];
+        string type = string.IsNullOrEmpty(season) ? "movie" : "tv";
+
+        // Build callback URL for async subtitle loading
+        string subsCallUrl = $"/lmg_subs/streamdata?tmdb={tmdb}&type={type}";
+        if (!string.IsNullOrEmpty(season))
+            subsCallUrl += $"&season={season}&episode={episode}";
 
         // Buffer the response
         var originalBody = context.Response.Body;
@@ -74,41 +74,32 @@ public static class SubtitleMiddleware
                 return;
             }
 
-            string modified;
+            string modified = null;
 
-            // Case 1: Pure JSON VideoDto (starts with '{')
-            if (responseBody.TrimStart().StartsWith("{") && responseBody.Contains("\"method\""))
+            // Case 1: Pure JSON — check if it's VideoDto (top-level method + url)
+            var trimmed = responseBody.TrimStart();
+            if (trimmed.StartsWith("{") && trimmed.Contains("\"method\""))
             {
-                modified = InjectIntoJson(responseBody, tmdb, season, episode);
-                if (modified == null)
+                // Parse to verify it's a VideoDto, not MovieResponseDto
+                var checkNode = JsonNode.Parse(trimmed);
+                if (checkNode is JsonObject && checkNode["method"] != null && checkNode["url"] != null)
                 {
-                    await RestoreBuffer(context, originalBody, buffer);
-                    return;
+                    modified = InjectSubsCall(trimmed, subsCallUrl);
                 }
             }
-            // Case 2: HTML with data-json attributes (LME module responses)
+            // Case 2: HTML with data-json attributes
             else if (responseBody.Contains("data-json="))
             {
-                modified = InjectIntoHtml(responseBody, tmdb, season, episode);
-                if (modified == null)
-                {
-                    await RestoreBuffer(context, originalBody, buffer);
-                    return;
-                }
+                modified = InjectHtmlSubsCall(responseBody, subsCallUrl);
             }
-            else
+
+            if (modified == null)
             {
                 await RestoreBuffer(context, originalBody, buffer);
                 return;
             }
 
-            if (modified == responseBody)
-            {
-                await RestoreBuffer(context, originalBody, buffer);
-                return;
-            }
-
-            Console.WriteLine($"LMG.SubsStreamdata: injected subs for {tmdb}");
+            Console.WriteLine($"LMG.SubsStreamdata: injected subtitles_call for {tmdb}");
 
             var modifiedBytes = Encoding.UTF8.GetBytes(modified);
             context.Response.ContentLength = modifiedBytes.Length;
@@ -122,38 +113,25 @@ public static class SubtitleMiddleware
         }
     }
 
-    /// <summary>Inject subtitles into a pure JSON VideoDto response.</summary>
-    static string InjectIntoJson(string json, string tmdb, string season, string episode)
+    /// <summary>Inject subtitles_call into pure JSON VideoDto.</summary>
+    static string InjectSubsCall(string json, string subsCallUrl)
     {
         var node = JsonNode.Parse(json);
         if (node == null) return null;
 
-        var externalSubs = SubsInvoke.FetchSubtitles(tmdb, string.IsNullOrEmpty(season) ? "movie" : "tv", season, episode);
-        if (externalSubs == null || externalSubs.Count == 0)
+        // Skip if already has subtitles_call
+        if (node["subtitles_call"] != null)
             return null;
 
-        var mergedSubs = new JsonArray();
-        var existingSubs = node["subtitles"] as JsonArray;
-        if (existingSubs != null)
-        {
-            foreach (var sub in existingSubs)
-                mergedSubs.Add(sub?.DeepClone());
-        }
-
-        AppendSubsToArray(mergedSubs, externalSubs);
-        node["subtitles"] = mergedSubs;
+        node["subtitles_call"] = subsCallUrl;
 
         var result = node.ToJsonString();
         return result == json ? null : result;
     }
 
-    /// <summary>Inject subtitles into HTML with data-json attributes.</summary>
-    static string InjectIntoHtml(string html, string tmdb, string season, string episode)
+    /// <summary>Inject subtitles_call into HTML data-json attributes.</summary>
+    static string InjectHtmlSubsCall(string html, string subsCallUrl)
     {
-        var externalSubs = SubsInvoke.FetchSubtitles(tmdb, string.IsNullOrEmpty(season) ? "movie" : "tv", season, episode);
-        if (externalSubs == null || externalSubs.Count == 0)
-            return null;
-
         bool anyModified = false;
 
         var result = Regex.Replace(html, """data-json='([^']+)'""", match =>
@@ -164,20 +142,15 @@ public static class SubtitleMiddleware
                 var node = JsonNode.Parse(rawJson);
                 if (node == null) return match.Value;
 
-                // Only process VideoDto-like JSON objects
+                // Only process VideoDto/MovieDto-like objects (have method + url)
                 if (node["method"] == null || node["url"] == null)
                     return match.Value;
 
-                var mergedSubs = new JsonArray();
-                var existingSubs = node["subtitles"] as JsonArray;
-                if (existingSubs != null)
-                {
-                    foreach (var sub in existingSubs)
-                        mergedSubs.Add(sub?.DeepClone());
-                }
+                // Skip if already has subtitles_call
+                if (node["subtitles_call"] != null)
+                    return match.Value;
 
-                AppendSubsToArray(mergedSubs, externalSubs);
-                node["subtitles"] = mergedSubs;
+                node["subtitles_call"] = subsCallUrl;
 
                 var newJson = node.ToJsonString();
                 if (newJson != rawJson)
@@ -192,19 +165,6 @@ public static class SubtitleMiddleware
         });
 
         return anyModified ? result : null;
-    }
-
-    static void AppendSubsToArray(JsonArray target, System.Collections.Generic.List<SubtitleDto> subs)
-    {
-        foreach (var sub in subs)
-        {
-            target.Add(new JsonObject
-            {
-                ["method"] = "link",
-                ["url"] = sub.url,
-                ["label"] = sub.label
-            });
-        }
     }
 
     static async Task RestoreBuffer(HttpContext context, Stream originalBody, MemoryStream buffer)

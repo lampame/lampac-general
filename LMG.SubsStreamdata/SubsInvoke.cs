@@ -18,9 +18,9 @@ public static class SubsInvoke
 
     /// <summary>
     /// Fetch subtitles from external API.
-    /// Called synchronously from EventListener.VideoTpl handler.
+    /// Called asynchronously from SubsController (player-side request).
     /// </summary>
-    public static List<SubtitleDto> FetchSubtitles(string tmdb, string type, string season, string episode)
+    public static async Task<List<SubtitleDto>> FetchSubtitlesAsync(string tmdb, string type, string season, string episode)
     {
         if (!ModInit.Enabled)
             return null;
@@ -44,12 +44,12 @@ public static class SubsInvoke
             if (cache.TryGetValue(cacheKey, out List<SubtitleDto> cached))
                 return cached;
 
-            // HTTP request (sync wrapper over async method)
-            string json = Task.Run(() => Http.Get(
+            // Async HTTP request — no thread pool blocking
+            string json = await Http.Get(
                 url,
                 timeoutSeconds: conf.timeoutSeconds,
                 referer: conf.referer
-            )).GetAwaiter().GetResult();
+            );
 
             if (string.IsNullOrEmpty(json))
                 return null;
