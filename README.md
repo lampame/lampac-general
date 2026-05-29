@@ -6,4 +6,5 @@ General modules for Lampac
   branch: main
   modules:
     - LMG.SubsStreamdata
+    - LMG.StreamData
 ```
