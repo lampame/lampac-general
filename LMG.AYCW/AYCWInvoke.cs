@@ -156,7 +156,7 @@ public class AYCWInvoke
         };
 
         string jsonBody = body.ToString(Newtonsoft.Json.Formatting.None);
-        _onLog?.Invoke($"AYCW token request: {url} body={jsonBody}");
+        _onLog?.Invoke($"AYCW: fetching token for tmdb={tmdb} type={type}");
 
         var headers = new List<HeadersModel>
         {
@@ -183,11 +183,8 @@ public class AYCWInvoke
                 req.Headers.TryAddWithoutValidation(h.name, h.val);
             }
 
-            _onLog?.Invoke($"AYCW token sending POST to {url}...");
             var resp = await hclient.SendAsync(req);
-            int statusCode = (int)resp.StatusCode;
             response = await resp.Content.ReadAsStringAsync();
-            _onLog?.Invoke($"AYCW token HTTP {statusCode}, body length: {response?.Length ?? 0}, body: {response?.Substring(0, Math.Min(response?.Length ?? 0, 300))}");
         }
         catch (Exception ex)
         {
@@ -202,8 +199,6 @@ public class AYCWInvoke
             _onLog?.Invoke("AYCW token response: empty or null");
             return null;
         }
-
-        _onLog?.Invoke($"AYCW token response: {response.Substring(0, Math.Min(response.Length, 200))}");
 
         try
         {
