@@ -26,6 +26,9 @@ public class AYCWInvoke
     private const string API_BASE = "https://allyoucanwatch.net/api/iptv";
     private const int MOVIE_CACHE_MIN = 5;
 
+    /// <summary>Persistent visitorId for AYCW cookie-based session tracking</summary>
+    private static readonly string VisitorId = Guid.NewGuid().ToString();
+
     public AYCWInvoke(OnlinesSettings init, IHybridCache hybridCache, Action<string> onLog, ProxyManager proxyManager, HttpHydra httpHydra = null)
     {
         _init = init;
@@ -159,27 +162,41 @@ public class AYCWInvoke
             new HeadersModel("Accept", "*/*"),
             new HeadersModel("User-Agent", "EchoapiRuntime/1.1.0"),
             new HeadersModel("Origin", "https://allyoucanwatch.net"),
-            new HeadersModel("Referer", "https://allyoucanwatch.net/")
+            new HeadersModel("Referer", "https://allyoucanwatch.net/"),
+            new HeadersModel("Cookie", $"visitorId={VisitorId}")
         };
 
         string response;
-        if (_httpHydra != null)
+        try
         {
-            response = await _httpHydra.Post(url, jsonBody, newheaders: headers);
+            if (_httpHydra != null)
+            {
+                response = await _httpHydra.Post(url, jsonBody, newheaders: headers);
+            }
+            else
+            {
+                response = await Shared.Services.Http.Post(
+                    url,
+                    jsonBody,
+                    timeoutSeconds: 15,
+                    headers: headers,
+                    proxy: _proxyManager?.Get()
+                );
+            }
         }
-        else
+        catch (Exception ex)
         {
-            response = await Shared.Services.Http.Post(
-                _init.cors(url),
-                jsonBody,
-                timeoutSeconds: 15,
-                headers: headers,
-                proxy: _proxyManager?.Get()
-            );
+            _onLog?.Invoke($"AYCW token POST failed: {ex.Message}");
+            return null;
         }
 
         if (string.IsNullOrEmpty(response))
+        {
+            _onLog?.Invoke("AYCW token response: empty or null");
             return null;
+        }
+
+        _onLog?.Invoke($"AYCW token response: {response.Substring(0, Math.Min(response.Length, 200))}");
 
         try
         {
@@ -203,7 +220,8 @@ public class AYCWInvoke
             new HeadersModel("Accept", "*/*"),
             new HeadersModel("User-Agent", "EchoapiRuntime/1.1.0"),
             new HeadersModel("Origin", "https://allyoucanwatch.net"),
-            new HeadersModel("Referer", "https://allyoucanwatch.net/")
+            new HeadersModel("Referer", "https://allyoucanwatch.net/"),
+            new HeadersModel("Cookie", $"visitorId={VisitorId}")
         };
 
         if (_httpHydra != null)
