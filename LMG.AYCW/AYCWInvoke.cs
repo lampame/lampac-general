@@ -1,0 +1,333 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using LMG.AYCW.Models;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Shared;
+using Shared.Models;
+using Shared.Models.Online.Settings;
+
+namespace LMG.AYCW;
+
+/// <summary>
+/// HTTP logic for AYCW: token fetch, SSE parsing, stream grouping.
+/// Short-lived tokens = no long cache. SSE parsed per-request.
+/// </summary>
+public class AYCWInvoke
+{
+    private readonly OnlinesSettings _init;
+    private readonly IHybridCache _hybridCache;
+    private readonly Action<string> _onLog;
+    private readonly ProxyManager _proxyManager;
+    private readonly HttpHydra _httpHydra;
+
+    private const string API_BASE = "https://allyoucanwatch.net/api/iptv";
+    private const int MOVIE_CACHE_MIN = 5;
+
+    public AYCWInvoke(OnlinesSettings init, IHybridCache hybridCache, Action<string> onLog, ProxyManager proxyManager, HttpHydra httpHydra = null)
+    {
+        _init = init;
+        _hybridCache = hybridCache;
+        _onLog = onLog;
+        _proxyManager = proxyManager;
+        _httpHydra = httpHydra;
+    }
+
+    /// <summary>Fetch all streams for a movie, grouped by language → quality → url</summary>
+    public async Task<List<LanguageGroup>> GetMovieStreams(long tmdb, string title, string originalTitle, int year)
+    {
+        string memKey = $"aycw:movie:{tmdb}";
+        if (_hybridCache.TryGetValue(memKey, out List<LanguageGroup> cached))
+            return cached;
+
+        string displayTitle = !string.IsNullOrEmpty(title) ? title : originalTitle;
+
+        try
+        {
+            string token = await GetToken(tmdb, "movie", displayTitle, year, 0, 0);
+            if (string.IsNullOrEmpty(token))
+                return null;
+
+            var streams = await GetStreams(token);
+            if (streams == null || streams.Count == 0)
+                return null;
+
+            var groups = GroupStreams(streams);
+            if (groups.Count == 0)
+                return null;
+
+            _hybridCache.Set(memKey, groups, DateTime.Now.AddMinutes(MOVIE_CACHE_MIN));
+            return groups;
+        }
+        catch (Exception ex)
+        {
+            _onLog?.Invoke($"AYCW movie error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Fetch streams for a specific episode, grouped by language → quality → url</summary>
+    public async Task<List<LanguageGroup>> GetEpisodeStreams(long tmdb, string title, string originalTitle, int year, int season, int episode)
+    {
+        // Don't cache — tokens expire quickly
+        string displayTitle = !string.IsNullOrEmpty(title) ? title : originalTitle;
+
+        try
+        {
+            string token = await GetToken(tmdb, "tv", displayTitle, year, season, episode);
+            if (string.IsNullOrEmpty(token))
+                return null;
+
+            var streams = await GetStreams(token);
+            if (streams == null || streams.Count == 0)
+                return null;
+
+            var groups = GroupStreams(streams);
+            if (groups.Count == 0)
+                return null;
+
+            return groups;
+        }
+        catch (Exception ex)
+        {
+            _onLog?.Invoke($"AYCW episode error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Fetch language list for a season (uses S01E01 as probe)</summary>
+    public async Task<List<string>> GetSeasonLanguages(long tmdb, string title, string originalTitle, int year, int season)
+    {
+        string memKey = $"aycw:langs:{tmdb}:s{season}";
+        if (_hybridCache.TryGetValue(memKey, out List<string> cachedLangs))
+            return cachedLangs;
+
+        string displayTitle = !string.IsNullOrEmpty(title) ? title : originalTitle;
+
+        try
+        {
+            string token = await GetToken(tmdb, "tv", displayTitle, year, season, 1);
+            if (string.IsNullOrEmpty(token))
+                return null;
+
+            var streams = await GetStreams(token);
+            if (streams == null || streams.Count == 0)
+                return null;
+
+            var langs = streams.Select(s => s.Label).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (langs.Count == 0)
+                return null;
+
+            _hybridCache.Set(memKey, langs, DateTime.Now.AddMinutes(15));
+            return langs;
+        }
+        catch (Exception ex)
+        {
+            _onLog?.Invoke($"AYCW season languages error: {ex.Message}");
+            return null;
+        }
+    }
+
+    #region API calls
+
+    /// <summary>POST /api/iptv/token → {token}</summary>
+    private async Task<string> GetToken(long tmdb, string type, string title, int year, int season, int episode)
+    {
+        string url = $"{API_BASE}/token";
+
+        var body = new JObject
+        {
+            ["tmdb"] = tmdb.ToString(),
+            ["type"] = type,
+            ["title"] = title ?? "",
+            ["year"] = year > 0 ? year.ToString() : "",
+            ["s"] = season > 0 ? season.ToString() : "",
+            ["e"] = episode > 0 ? episode.ToString() : ""
+        };
+
+        string jsonBody = body.ToString(Newtonsoft.Json.Formatting.None);
+        _onLog?.Invoke($"AYCW token request: {url} body={jsonBody}");
+
+        var headers = new List<HeadersModel>
+        {
+            new HeadersModel("Content-Type", "application/json"),
+            new HeadersModel("Accept", "*/*"),
+            new HeadersModel("User-Agent", "EchoapiRuntime/1.1.0"),
+            new HeadersModel("Origin", "https://allyoucanwatch.net"),
+            new HeadersModel("Referer", "https://allyoucanwatch.net/")
+        };
+
+        string response;
+        if (_httpHydra != null)
+        {
+            response = await _httpHydra.Post(url, jsonBody, newheaders: headers);
+        }
+        else
+        {
+            response = await Shared.Services.Http.Post(
+                _init.cors(url),
+                jsonBody,
+                timeoutSeconds: 15,
+                headers: headers,
+                proxy: _proxyManager?.Get()
+            );
+        }
+
+        if (string.IsNullOrEmpty(response))
+            return null;
+
+        try
+        {
+            var tokenResp = JsonConvert.DeserializeObject<TokenResponse>(response);
+            return tokenResp?.Token;
+        }
+        catch
+        {
+            _onLog?.Invoke($"AYCW token parse error: {response?.Substring(0, Math.Min(response.Length, 200))}");
+            return null;
+        }
+    }
+
+    /// <summary>GET /api/iptv/stream?token=... → parse SSE data: lines</summary>
+    private async Task<string> GetStreamsRaw(string token)
+    {
+        string url = $"{API_BASE}/stream?token={Uri.EscapeDataString(token)}";
+
+        var headers = new List<HeadersModel>
+        {
+            new HeadersModel("Accept", "*/*"),
+            new HeadersModel("User-Agent", "EchoapiRuntime/1.1.0"),
+            new HeadersModel("Origin", "https://allyoucanwatch.net"),
+            new HeadersModel("Referer", "https://allyoucanwatch.net/")
+        };
+
+        if (_httpHydra != null)
+            return await _httpHydra.Get(url, newheaders: headers);
+
+        return await Shared.Services.Http.Get(
+            _init.cors(url),
+            headers: headers,
+            proxy: _proxyManager?.Get(),
+            timeoutSeconds: 20
+        );
+    }
+
+    /// <summary>Fetch and parse SSE stream into list of StreamEntry</summary>
+    private async Task<List<StreamEntry>> GetStreams(string token)
+    {
+        string raw = await GetStreamsRaw(token);
+        if (string.IsNullOrEmpty(raw))
+            return null;
+
+        var entries = new List<StreamEntry>();
+        var lines = raw.Split('\n');
+
+        foreach (var line in lines)
+        {
+            string trimmed = line.Trim();
+            if (!trimmed.StartsWith("data: "))
+                continue;
+
+            string json = trimmed.Substring(6); // remove "data: "
+            if (json.Trim() == "{\"done\":true}")
+                continue;
+
+            try
+            {
+                var payload = JsonConvert.DeserializeObject<SSEPayload>(json);
+                if (payload?.Stream == null)
+                    continue;
+                if (string.IsNullOrEmpty(payload.Stream.Url))
+                    continue;
+
+                entries.Add(new StreamEntry
+                {
+                    Url = payload.Stream.Url,
+                    Label = payload.Stream.Label ?? "Unknown",
+                    Quality = string.IsNullOrEmpty(payload.Stream.Quality) ? "Auto" : payload.Stream.Quality
+                });
+            }
+            catch (Exception ex)
+            {
+                _onLog?.Invoke($"AYCW SSE parse error: {ex.Message} line={json.Substring(0, Math.Min(json.Length, 100))}");
+            }
+        }
+
+        return entries.Count > 0 ? entries : null;
+    }
+
+    #endregion
+
+    #region Grouping
+
+    /// <summary>
+    /// Group streams by language, then within each language group by quality.
+    /// Deduplicates: same (language, quality) from different accounts → keep first.
+    /// </summary>
+    public static List<LanguageGroup> GroupStreams(List<StreamEntry> streams)
+    {
+        if (streams == null || streams.Count == 0)
+            return null;
+
+        // lang → (quality → url)
+        var langMap = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in streams)
+        {
+            string lang = entry.Label ?? "Unknown";
+            string quality = entry.Quality ?? "Auto";
+
+            if (!langMap.TryGetValue(lang, out var qualityMap))
+            {
+                qualityMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                langMap[lang] = qualityMap;
+            }
+
+            // Keep first URL for each quality (dedup across accounts)
+            if (!qualityMap.ContainsKey(quality))
+                qualityMap[quality] = entry.Url;
+        }
+
+        // Convert to ordered list
+        var result = new List<LanguageGroup>(langMap.Count);
+        foreach (var kv in langMap)
+        {
+            result.Add(new LanguageGroup
+            {
+                Language = kv.Key,
+                QualityLinks = kv.Value
+            });
+        }
+
+        return result.Count > 0 ? result : null;
+    }
+
+    /// <summary>Extract unique languages from grouped streams</summary>
+    public static List<string> GetLanguages(List<LanguageGroup> groups)
+    {
+        if (groups == null || groups.Count == 0)
+            return null;
+        return groups.Select(g => g.Language).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>Find language group by name (case-insensitive). Falls back to first group.</summary>
+    public static LanguageGroup FindLanguage(List<LanguageGroup> groups, string lang)
+    {
+        if (groups == null || groups.Count == 0)
+            return null;
+
+        if (!string.IsNullOrEmpty(lang))
+        {
+            var match = groups.FirstOrDefault(g =>
+                string.Equals(g.Language, lang, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+                return match;
+        }
+
+        return groups[0];
+    }
+
+    #endregion
+}
