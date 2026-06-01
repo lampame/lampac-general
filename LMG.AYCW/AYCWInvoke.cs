@@ -171,30 +171,24 @@ public class AYCWInvoke
         string response;
         try
         {
-            if (_httpHydra != null)
+            using var hclient = new System.Net.Http.HttpClient();
+            hclient.Timeout = TimeSpan.FromSeconds(20);
+
+            var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+            req.Content = new System.Net.Http.StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
+
+            foreach (var h in headers)
             {
-                response = await _httpHydra.Post(url, jsonBody, newheaders: headers);
+                if (h.name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                req.Headers.TryAddWithoutValidation(h.name, h.val);
             }
-            else
-            {
-                using var hclient = new System.Net.Http.HttpClient();
-                hclient.Timeout = TimeSpan.FromSeconds(20);
 
-                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
-                req.Content = new System.Net.Http.StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
-
-                foreach (var h in headers)
-                {
-                    if (h.name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
-                        continue; // already set on StringContent
-                    req.Headers.TryAddWithoutValidation(h.name, h.val);
-                }
-
-                var resp = await hclient.SendAsync(req);
-                int statusCode = (int)resp.StatusCode;
-                response = await resp.Content.ReadAsStringAsync();
-                _onLog?.Invoke($"AYCW token HTTP {statusCode}, body length: {response?.Length ?? 0}");
-            }
+            _onLog?.Invoke($"AYCW token sending POST to {url}...");
+            var resp = await hclient.SendAsync(req);
+            int statusCode = (int)resp.StatusCode;
+            response = await resp.Content.ReadAsStringAsync();
+            _onLog?.Invoke($"AYCW token HTTP {statusCode}, body length: {response?.Length ?? 0}, body: {response?.Substring(0, Math.Min(response?.Length ?? 0, 300))}");
         }
         catch (Exception ex)
         {
