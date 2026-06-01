@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
 using System.Threading.Tasks;
 using LMG.AYCW.Models;
 using Newtonsoft.Json;
@@ -175,19 +177,30 @@ public class AYCWInvoke
             }
             else
             {
-                response = await Shared.Services.Http.Post(
-                    url,
-                    jsonBody,
-                    timeoutSeconds: 15,
-                    headers: headers,
-                    proxy: _proxyManager?.Get(),
-                    statusCodeOK: false
-                );
+                using var hclient = new System.Net.Http.HttpClient();
+                hclient.Timeout = TimeSpan.FromSeconds(20);
+
+                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+                req.Content = new System.Net.Http.StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
+
+                foreach (var h in headers)
+                {
+                    if (h.name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
+                        continue; // already set on StringContent
+                    req.Headers.TryAddWithoutValidation(h.name, h.val);
+                }
+
+                var resp = await hclient.SendAsync(req);
+                int statusCode = (int)resp.StatusCode;
+                response = await resp.Content.ReadAsStringAsync();
+                _onLog?.Invoke($"AYCW token HTTP {statusCode}, body length: {response?.Length ?? 0}");
             }
         }
         catch (Exception ex)
         {
-            _onLog?.Invoke($"AYCW token POST failed: {ex.Message}");
+            _onLog?.Invoke($"AYCW token POST failed: {ex.GetType().Name}: {ex.Message}");
+            if (ex.InnerException != null)
+                _onLog?.Invoke($"AYCW token inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
             return null;
         }
 
