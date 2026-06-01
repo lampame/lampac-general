@@ -42,11 +42,12 @@ public class AYCWInvoke
         if (_hybridCache.TryGetValue(memKey, out List<LanguageGroup> cached))
             return cached;
 
-        string displayTitle = !string.IsNullOrEmpty(title) ? title : originalTitle;
+        // AYCW API expects TMDB-matched title — use original, fallback to localized
+        string apiTitle = !string.IsNullOrEmpty(originalTitle) ? originalTitle : title;
 
         try
         {
-            string token = await GetToken(tmdb, "movie", displayTitle, year, 0, 0);
+            string token = await GetToken(tmdb, "movie", apiTitle, year, 0, 0);
             if (string.IsNullOrEmpty(token))
                 return null;
 
@@ -72,11 +73,12 @@ public class AYCWInvoke
     public async Task<List<LanguageGroup>> GetEpisodeStreams(long tmdb, string title, string originalTitle, int year, int season, int episode)
     {
         // Don't cache — tokens expire quickly
-        string displayTitle = !string.IsNullOrEmpty(title) ? title : originalTitle;
+        // AYCW API expects TMDB-matched title — use original, fallback to localized
+        string apiTitle = !string.IsNullOrEmpty(originalTitle) ? originalTitle : title;
 
         try
         {
-            string token = await GetToken(tmdb, "tv", displayTitle, year, season, episode);
+            string token = await GetToken(tmdb, "tv", apiTitle, year, season, episode);
             if (string.IsNullOrEmpty(token))
                 return null;
 
@@ -104,11 +106,12 @@ public class AYCWInvoke
         if (_hybridCache.TryGetValue(memKey, out List<string> cachedLangs))
             return cachedLangs;
 
-        string displayTitle = !string.IsNullOrEmpty(title) ? title : originalTitle;
+        // AYCW API expects TMDB-matched title — use original, fallback to localized
+        string apiTitle = !string.IsNullOrEmpty(originalTitle) ? originalTitle : title;
 
         try
         {
-            string token = await GetToken(tmdb, "tv", displayTitle, year, season, 1);
+            string token = await GetToken(tmdb, "tv", apiTitle, year, season, 1);
             if (string.IsNullOrEmpty(token))
                 return null;
 

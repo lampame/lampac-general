@@ -155,6 +155,7 @@ public class Controller : BaseOnlineController
                     continue;
 
                 string link = $"{host}/lite/lmg_aycw?id={tmdb}&serial=1&s={sn}" +
+                    $"&year={year}" +
                     $"&title={HttpUtility.UrlEncode(displayTitle)}" +
                     $"&original_title={HttpUtility.UrlEncode(originalTitle ?? "")}";
                 seasonTpl.Append($"Season {sn}", link, sn.ToString());
@@ -194,6 +195,7 @@ public class Controller : BaseOnlineController
         foreach (var lang in langs)
         {
             string voiceLink = $"{host}/lite/lmg_aycw?id={tmdb}&serial=1&s={s}" +
+                $"&year={year}" +
                 $"&t={HttpUtility.UrlEncode(lang)}" +
                 $"&title={HttpUtility.UrlEncode(displayTitle)}" +
                 $"&original_title={HttpUtility.UrlEncode(originalTitle ?? "")}";
@@ -208,6 +210,7 @@ public class Controller : BaseOnlineController
             string episodeName = $"Episode {ep}";
             string callUrl = $"{host}/lite/lmg_aycw?id={tmdb}&serial=1&s={s}&e={ep}" +
                 $"&play=true" +
+                $"&year={year}" +
                 $"&t={HttpUtility.UrlEncode(selectedLang)}" +
                 $"&title={HttpUtility.UrlEncode(displayTitle)}" +
                 $"&original_title={HttpUtility.UrlEncode(originalTitle ?? "")}";
