@@ -160,9 +160,9 @@ public class AYCWInvoke
         {
             new HeadersModel("Content-Type", "application/json"),
             new HeadersModel("Accept", "*/*"),
+            new HeadersModel("Accept-Encoding", "gzip, deflate, br"),
+            new HeadersModel("Connection", "keep-alive"),
             new HeadersModel("User-Agent", "EchoapiRuntime/1.1.0"),
-            new HeadersModel("Origin", "https://allyoucanwatch.net"),
-            new HeadersModel("Referer", "https://allyoucanwatch.net/"),
             new HeadersModel("Cookie", $"visitorId={VisitorId}")
         };
 
@@ -180,7 +180,8 @@ public class AYCWInvoke
                     jsonBody,
                     timeoutSeconds: 15,
                     headers: headers,
-                    proxy: _proxyManager?.Get()
+                    proxy: _proxyManager?.Get(),
+                    statusCodeOK: false
                 );
             }
         }
@@ -218,9 +219,9 @@ public class AYCWInvoke
         var headers = new List<HeadersModel>
         {
             new HeadersModel("Accept", "*/*"),
+            new HeadersModel("Accept-Encoding", "gzip, deflate, br"),
+            new HeadersModel("Connection", "keep-alive"),
             new HeadersModel("User-Agent", "EchoapiRuntime/1.1.0"),
-            new HeadersModel("Origin", "https://allyoucanwatch.net"),
-            new HeadersModel("Referer", "https://allyoucanwatch.net/"),
             new HeadersModel("Cookie", $"visitorId={VisitorId}")
         };
 
