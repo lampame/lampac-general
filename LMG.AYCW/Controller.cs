@@ -146,7 +146,7 @@ public class Controller : BaseOnlineController
         // Season list
         if (s <= 0)
         {
-            var seasonTpl = new SeasonTpl(seasons.Count);
+            var seasonTpl = new SeasonTpl();
 
             foreach (var season in seasons)
             {

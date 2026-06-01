@@ -7,6 +7,7 @@
     "../LMG.Shared/GlobalUsings.cs",
     "../LMG.Shared/Online/OnlineRegistry.cs",
     "../LMG.Shared/Update/ModuleUpdateService.cs",
+    "../LMG.Shared/Apn/ApnHelper.cs",
     "../LMG.Shared/Tmdb/TmdbHelper.cs"
   ]
 }
