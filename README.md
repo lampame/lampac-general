@@ -7,4 +7,5 @@ General modules for Lampac
   modules:
     - LMG.SubsStreamdata
     - LMG.StreamData
+    - LMG.AYCW
 ```
