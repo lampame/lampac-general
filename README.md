@@ -16,6 +16,7 @@ General modules for Lampac
 Manifest
 
 /stremio/manifest.json?token=father
+
 /stremio/father/manifest.json
 
 ```json
