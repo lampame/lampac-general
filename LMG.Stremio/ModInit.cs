@@ -36,11 +36,11 @@ public class ModInit : IModuleLoaded
         baseconf.app.Use(next => async context =>
         {
             var path = context.Request.Path.Value;
-            if (path != null && path.StartsWith("/stremio/", StringComparison.OrdinalIgnoreCase))
+            if (path != null && path.StartsWith("/stremio/", System.StringComparison.OrdinalIgnoreCase))
             {
                 // Extract token from path: /stremio/{token}/...
-                var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                if (segments.Length >= 2 && segments[0].Equals("stremio", StringComparison.OrdinalIgnoreCase))
+                var segments = path.Split('/', System.StringSplitOptions.RemoveEmptyEntries);
+                if (segments.Length >= 2 && segments[0].Equals("stremio", System.StringComparison.OrdinalIgnoreCase))
                 {
                     string token = segments[1];
                     // Add token to query string if not already present
