@@ -1,5 +1,12 @@
 {
   "enable": true,
   "version": 3,
-  "initspace": "LMG.Stremio.ModInit"
+  "initspace": "LMG.Stremio.ModInit",
+  "syntaxPaths": [
+    "../LMG.Shared/GlobalUsings.cs",
+    "../LMG.Shared/Online/OnlineRegistry.cs",
+    "../LMG.Shared/Update/ModuleUpdateService.cs",
+    "../LMG.Shared/Apn/ApnHelper.cs",
+    "../LMG.Shared/Tmdb/TmdbHelper.cs"
+  ]
 }
