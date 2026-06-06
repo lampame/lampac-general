@@ -33,7 +33,7 @@ public class ModInit : IModuleLoaded
         Shared.Models.Events.EventListener.UpdateInitFile += updateConf;
 
         // Register middleware to extract token from URL path
-        baseconf.app.Use(async (context, next) =>
+        baseconf.app.Use(next => async context =>
         {
             var path = context.Request.Path.Value;
             if (path != null && path.StartsWith("/stremio/", StringComparison.OrdinalIgnoreCase))
@@ -54,7 +54,7 @@ public class ModInit : IModuleLoaded
                     }
                 }
             }
-            await next();
+            await next(context);
         });
     }
 
