@@ -8,4 +8,22 @@ General modules for Lampac
     - LMG.SubsStreamdata
     - LMG.StreamData
     - LMG.AYCW
+    - LMG.Stremio
+```
+
+## LMG.Stremio
+
+Manifest
+
+/stremio/manifest.json?token=batya
+/stremio/batya/manifest.json
+
+```json
+{
+  "LMG.Stremio": {
+    "enable": true,
+    "cacheMinutes": 5,
+    "tmdbApiKey": "SUPERKEY"
+  }
+}
 ```
