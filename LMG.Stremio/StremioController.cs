@@ -21,7 +21,6 @@ public class StremioController : BaseController
     /// Stremio addon manifest
     /// </summary>
     [HttpGet]
-    [Route("stremio/{token}/manifest.json")]
     [Route("stremio/manifest.json")]
     public ActionResult Manifest(string token = null)
     {
@@ -37,7 +36,6 @@ public class StremioController : BaseController
     /// Movie streams
     /// </summary>
     [HttpGet]
-    [Route("stremio/{token}/stream/movie/{id}.json")]
     [Route("stremio/stream/movie/{id}.json")]
     async public Task<ActionResult> StreamMovie(string id, string token = null)
     {
@@ -130,7 +128,6 @@ public class StremioController : BaseController
     /// Series streams
     /// </summary>
     [HttpGet]
-    [Route("stremio/{token}/stream/series/{id}.json")]
     [Route("stremio/stream/series/{id}.json")]
     async public Task<ActionResult> StreamSeries(string id, string token = null)
     {
