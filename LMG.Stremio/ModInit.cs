@@ -1,5 +1,6 @@
 using Newtonsoft.Json.Linq;
-using Shared.Services.Module;
+using Shared.Services;
+using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using Shared.Models.Base;
 using Shared.Models.Events;

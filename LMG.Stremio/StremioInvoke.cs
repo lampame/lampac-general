@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 using System.Web;
 using LMG.Stremio.Models;
 using Newtonsoft.Json;
+using Shared.Services;
 using Shared.Services.Hybrid;
-using Shared.Services.Module;
 
 namespace LMG.Stremio;
 

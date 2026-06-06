@@ -1,8 +1,5 @@
 {
   "enable": true,
   "version": 3,
-  "initspace": "LMG.Stremio.ModInit",
-  "syntaxPaths": [
-    "../LMG.Shared/GlobalUsings.cs"
-  ]
+  "initspace": "LMG.Stremio.ModInit"
 }
