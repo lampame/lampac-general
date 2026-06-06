@@ -106,8 +106,12 @@ public class StremioController : BaseController
                     {
                         var callResult = await invoke.GetCallStream(item.url, token);
                         if (callResult == null || string.IsNullOrEmpty(callResult.url))
+                        {
+                            OnLog($"Stremio: movie call returned empty for {source.name}");
                             continue;
+                        }
                         streamUrl = callResult.url;
+                        OnLog($"Stremio: resolved movie call to {streamUrl.Substring(0, Math.Min(80, streamUrl.Length))}...");
                     }
 
                     string streamName = source.name;
@@ -224,23 +228,29 @@ public class StremioController : BaseController
                 // Find episode
                 var ep = episodesResponse.data.FirstOrDefault(x => x.e == episode);
                 if (ep == null || string.IsNullOrEmpty(ep.url))
+                {
+                    OnLog($"Stremio: episode {episode} not found in {source.name}");
                     continue;
+                }
 
-                // Get episode stream
+                // Resolve stream URL based on method
                 string streamUrl;
                 if (ep.method == "call")
                 {
+                    // Call endpoint to resolve real stream URL
                     var callResult = await invoke.GetCallStream(ep.url, token);
                     if (callResult == null || string.IsNullOrEmpty(callResult.url))
+                    {
+                        OnLog($"Stremio: call returned empty for {source.name} ep {episode}");
                         continue;
+                    }
                     streamUrl = callResult.url;
+                    OnLog($"Stremio: resolved call to {streamUrl.Substring(0, Math.Min(80, streamUrl.Length))}...");
                 }
                 else
                 {
-                    var video = await invoke.GetEpisodeStream(ep.url, token);
-                    if (video == null || string.IsNullOrEmpty(video.url))
-                        continue;
-                    streamUrl = video.url;
+                    // method == "play" — URL is already the direct stream
+                    streamUrl = ep.url;
                 }
 
                 string streamName = source.name;
