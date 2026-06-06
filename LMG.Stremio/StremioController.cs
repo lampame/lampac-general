@@ -27,6 +27,7 @@ public class StremioController : BaseController
     /// Stremio addon manifest
     /// </summary>
     [HttpGet]
+    [Route("stremio/{token}/manifest.json")]
     [Route("stremio/manifest.json")]
     public ActionResult Manifest(string token = null)
     {
@@ -46,6 +47,7 @@ public class StremioController : BaseController
     /// Movie streams
     /// </summary>
     [HttpGet]
+    [Route("stremio/{token}/stream/movie/{id}.json")]
     [Route("stremio/stream/movie/{id}.json")]
     async public Task<ActionResult> StreamMovie(string id, string token = null)
     {
@@ -165,7 +167,32 @@ public class StremioController : BaseController
     /// Series streams
     /// </summary>
     [HttpGet]
+    [Route("stremio/{token}/stream/series/{id}.json")]
     [Route("stremio/stream/series/{id}.json")]
+    [Route("stremio/stream/{*path}")]
+    async public Task<ActionResult> StreamSeriesFallback(string id = null, string path = null, string token = null)
+    {
+        // Fallback route for malformed URLs like /stremio/stream?token=xxx/series/tt123:1:2.json
+        if (string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(path))
+        {
+            // Try to parse id from path
+            var parts = path.Split('/');
+            foreach (var part in parts)
+            {
+                if (part.Contains(':') && part.StartsWith("tt"))
+                {
+                    id = part;
+                    break;
+                }
+            }
+        }
+
+        if (string.IsNullOrEmpty(id))
+            return Json(new StremioStreamResponse());
+
+        return await StreamSeries(id, token);
+    }
+
     async public Task<ActionResult> StreamSeries(string id, string token = null)
     {
         Response.Headers["Access-Control-Allow-Origin"] = "*";
