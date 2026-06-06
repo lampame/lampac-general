@@ -2,5 +2,5 @@ global using Shared.Services;
 global using Shared.Services.Hybrid;
 global using Shared.Models.Base;
 global using AppInit = Shared.CoreInit;
-// global using LMG.Common.Online;
-// global using LMG.Common.Update;
+global using LMG.Common.Online;
+global using LMG.Common.Update;
