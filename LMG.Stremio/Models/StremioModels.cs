@@ -13,6 +13,20 @@ namespace LMG.Stremio.Models
         public string[] resources { get; set; } = ["stream"];
         public string[] types { get; set; } = ["movie", "series"];
         public string[] idPrefixes { get; set; } = ["tt"];
+        public List<StremioCatalog> catalogs { get; set; } = [];
+        public StremioBehaviorHints behaviorHints { get; set; } = new();
+    }
+
+    public class StremioCatalog
+    {
+        public string type { get; set; }
+        public string id { get; set; }
+        public string name { get; set; }
+    }
+
+    public class StremioBehaviorHints
+    {
+        public bool configurable { get; set; } = false;
     }
 
     public class StremioStreamResponse

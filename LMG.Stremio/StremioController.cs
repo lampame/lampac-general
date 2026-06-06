@@ -30,7 +30,11 @@ public class StremioController : BaseController
     [Route("stremio/manifest.json")]
     public ActionResult Manifest(string token = null)
     {
-        var manifest = new StremioManifest();
+        var manifest = new StremioManifest
+        {
+            catalogs = new List<StremioCatalog>(),
+            behaviorHints = new StremioBehaviorHints { configurable = false }
+        };
         var json = Newtonsoft.Json.JsonConvert.SerializeObject(manifest);
         Response.Headers["Access-Control-Allow-Origin"] = "*";
         Response.Headers["Access-Control-Allow-Methods"] = "GET";
