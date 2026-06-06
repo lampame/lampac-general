@@ -5,9 +5,8 @@ using System.Threading.Tasks;
 using System.Web;
 using LMG.Stremio.Models;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using Shared;
-using Shared.Engine;
+using Shared.Services.Hybrid;
+using Shared.Services.Module;
 
 namespace LMG.Stremio;
 
@@ -46,7 +45,7 @@ public class StremioInvoke
             string tmdbUrl = $"{TMDB_API}/find/{imdbId}?api_key={_init.tmdbApiKey}&external_source=imdb_id";
             _onLog?.Invoke($"Stremio TMDB: {tmdbUrl}");
 
-            string tmdbJson = await Http.Get(tmdbUrl, timeoutSeconds: 10);
+            string tmdbJson = await Shared.Services.Http.Get(tmdbUrl, timeoutSeconds: 10);
             if (string.IsNullOrEmpty(tmdbJson))
                 return null;
 
@@ -86,7 +85,7 @@ public class StremioInvoke
             try
             {
                 string extUrl = $"{_lampacHost}/externalids?imdb_id={imdbId}&serial={serial}";
-                string extJson = await Http.Get(extUrl, timeoutSeconds: 5);
+                string extJson = await Shared.Services.Http.Get(extUrl, timeoutSeconds: 5);
                 if (!string.IsNullOrEmpty(extJson))
                 {
                     var extIds = JsonConvert.DeserializeObject<LampacExternalIds>(extJson);
@@ -145,7 +144,7 @@ public class StremioInvoke
 
             _onLog?.Invoke($"Stremio sources: {url}");
 
-            string json = await Http.Get(url, timeoutSeconds: 10);
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
             if (string.IsNullOrEmpty(json))
                 return null;
 
@@ -173,7 +172,7 @@ public class StremioInvoke
             string url = BuildSourceUrl(source.url, meta, token);
             _onLog?.Invoke($"Stremio movie: {url}");
 
-            string json = await Http.Get(url, timeoutSeconds: 15);
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 15);
             if (string.IsNullOrEmpty(json))
                 return null;
 
@@ -195,7 +194,7 @@ public class StremioInvoke
                         if (!string.IsNullOrEmpty(token) && !followUrl.Contains("token="))
                             followUrl += $"&token={token}";
 
-                        string followJson = await Http.Get(followUrl, timeoutSeconds: 15);
+                        string followJson = await Shared.Services.Http.Get(followUrl, timeoutSeconds: 15);
                         if (!string.IsNullOrEmpty(followJson))
                             return JsonConvert.DeserializeObject<LampacMovieResponse>(followJson);
                     }
@@ -223,7 +222,7 @@ public class StremioInvoke
             url += $"&s={season}";
             _onLog?.Invoke($"Stremio episodes: {url}");
 
-            string json = await Http.Get(url, timeoutSeconds: 15);
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 15);
             if (string.IsNullOrEmpty(json))
                 return null;
 
@@ -245,7 +244,7 @@ public class StremioInvoke
                         if (!string.IsNullOrEmpty(token) && !followUrl.Contains("token="))
                             followUrl += $"&token={token}";
 
-                        string followJson = await Http.Get(followUrl, timeoutSeconds: 15);
+                        string followJson = await Shared.Services.Http.Get(followUrl, timeoutSeconds: 15);
                         if (!string.IsNullOrEmpty(followJson))
                             return JsonConvert.DeserializeObject<LampacEpisodeResponse>(followJson);
                     }
@@ -279,7 +278,7 @@ public class StremioInvoke
 
             _onLog?.Invoke($"Stremio episode stream: {url}");
 
-            string json = await Http.Get(url, timeoutSeconds: 15);
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 15);
             if (string.IsNullOrEmpty(json))
                 return null;
 
