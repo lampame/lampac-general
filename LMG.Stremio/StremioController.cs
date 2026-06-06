@@ -256,49 +256,119 @@ public class StremioController : BaseController
 
                 OnLog($"Stremio: got {episodesResponse.data.Count} episodes from {source.name}");
 
-                // Find episode
-                var ep = episodesResponse.data.FirstOrDefault(x => x.e == episode);
-                if (ep == null || string.IsNullOrEmpty(ep.url))
+                // Check if there are multiple voices
+                var voices = episodesResponse.voice;
+                if (voices != null && voices.Count > 0)
                 {
-                    OnLog($"Stremio: episode {episode} not found in {source.name}");
-                    continue;
-                }
+                    OnLog($"Stremio: {source.name} has {voices.Count} voices");
 
-                // Resolve stream URL based on method
-                string streamUrl;
-                if (ep.method == "call")
-                {
-                    // Call endpoint to resolve real stream URL
-                    var callResult = await invoke.GetCallStream(ep.url, token);
-                    if (callResult == null || string.IsNullOrEmpty(callResult.url))
+                    // Process each voice separately
+                    foreach (var voice in voices)
                     {
-                        OnLog($"Stremio: call returned empty for {source.name} ep {episode}");
-                        continue;
+                        try
+                        {
+                            OnLog($"Stremio: processing voice {voice.name} for {source.name}");
+
+                            // Get episodes for this specific voice
+                            var voiceEpisodesResponse = await invoke.GetEpisodesWithVoice(source, meta, season, voice.name, token);
+                            if (voiceEpisodesResponse?.data == null || voiceEpisodesResponse.data.Count == 0)
+                            {
+                                OnLog($"Stremio: no episodes for voice {voice.name} from {source.name}");
+                                continue;
+                            }
+
+                            // Find episode
+                            var ep = voiceEpisodesResponse.data.FirstOrDefault(x => x.e == episode);
+                            if (ep == null || string.IsNullOrEmpty(ep.url))
+                            {
+                                OnLog($"Stremio: episode {episode} not found in voice {voice.name} from {source.name}");
+                                continue;
+                            }
+
+                            // Resolve stream URL based on method
+                            string streamUrl;
+                            if (ep.method == "call")
+                            {
+                                var callResult = await invoke.GetCallStream(ep.url, token);
+                                if (callResult == null || string.IsNullOrEmpty(callResult.url))
+                                {
+                                    OnLog($"Stremio: call returned empty for {source.name} voice {voice.name} ep {episode}");
+                                    continue;
+                                }
+                                streamUrl = callResult.url;
+                                OnLog($"Stremio: resolved call to {streamUrl.Substring(0, Math.Min(80, streamUrl.Length))}...");
+                            }
+                            else
+                            {
+                                streamUrl = ep.url;
+                            }
+
+                            string streamName = $"{source.name} - {voice.name}";
+                            string description = $"S{season:D2}E{episode:D2}";
+
+                            var stream = new StremioStream
+                            {
+                                name = streamName,
+                                description = description,
+                                url = streamUrl,
+                                behaviorHints = new StremioStreamBehaviorHints
+                                {
+                                    bingeGroup = $"lampac-{source.balanser}-{voice.name}"
+                                }
+                            };
+
+                            streams.Add(stream);
+                            OnLog($"Stremio: added stream for {source.name} - {voice.name}");
+                        }
+                        catch (Exception ex)
+                        {
+                            OnLog($"Stremio voice {voice.name} error for {source.name}: {ex.Message}");
+                        }
                     }
-                    streamUrl = callResult.url;
-                    OnLog($"Stremio: resolved call to {streamUrl.Substring(0, Math.Min(80, streamUrl.Length))}...");
                 }
                 else
                 {
-                    // method == "play" — URL is already the direct stream
-                    streamUrl = ep.url;
-                }
-
-                string streamName = source.name;
-                string description = $"S{season:D2}E{episode:D2}";
-
-                var stream = new StremioStream
-                {
-                    name = streamName,
-                    description = description,
-                    url = streamUrl,
-                    behaviorHints = new StremioStreamBehaviorHints
+                    // No voices - use data as is
+                    var ep = episodesResponse.data.FirstOrDefault(x => x.e == episode);
+                    if (ep == null || string.IsNullOrEmpty(ep.url))
                     {
-                        bingeGroup = $"lampac-{source.balanser}"
+                        OnLog($"Stremio: episode {episode} not found in {source.name}");
+                        continue;
                     }
-                };
 
-                streams.Add(stream);
+                    string streamUrl;
+                    if (ep.method == "call")
+                    {
+                        var callResult = await invoke.GetCallStream(ep.url, token);
+                        if (callResult == null || string.IsNullOrEmpty(callResult.url))
+                        {
+                            OnLog($"Stremio: call returned empty for {source.name} ep {episode}");
+                            continue;
+                        }
+                        streamUrl = callResult.url;
+                        OnLog($"Stremio: resolved call to {streamUrl.Substring(0, Math.Min(80, streamUrl.Length))}...");
+                    }
+                    else
+                    {
+                        streamUrl = ep.url;
+                    }
+
+                    string streamName = source.name;
+                    string description = $"S{season:D2}E{episode:D2}";
+
+                    var stream = new StremioStream
+                    {
+                        name = streamName,
+                        description = description,
+                        url = streamUrl,
+                        behaviorHints = new StremioStreamBehaviorHints
+                        {
+                            bingeGroup = $"lampac-{source.balanser}"
+                        }
+                    };
+
+                    streams.Add(stream);
+                }
             }
             catch (Exception ex)
             {

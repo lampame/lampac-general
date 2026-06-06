@@ -221,15 +221,32 @@ public class StremioInvoke
     /// </summary>
     public async Task<LampacEpisodeResponse> GetEpisodes(LampacSource source, TmdbMetadata meta, int season, string token)
     {
+        return await GetEpisodesWithVoice(source, meta, season, null, token);
+    }
+
+    /// <summary>
+    /// Get episodes for season from source with specific voice (cached)
+    /// </summary>
+    public async Task<LampacEpisodeResponse> GetEpisodesWithVoice(LampacSource source, TmdbMetadata meta, int season, string voiceName, string token)
+    {
         // Check cache first
-        string memKey = $"Stremio:episodes:{source.balanser}:{meta.imdb_id}:{season}";
+        string voiceKey = string.IsNullOrEmpty(voiceName) ? "default" : voiceName;
+        string memKey = $"Stremio:episodes:{source.balanser}:{meta.imdb_id}:{season}:{voiceKey}";
         if (_hybridCache.TryGetValue(memKey, out LampacEpisodeResponse cached))
+        {
+            _onLog?.Invoke($"Stremio: cache HIT for {source.balanser} S{season} voice={voiceKey}");
             return cached;
+        }
+
+        _onLog?.Invoke($"Stremio: cache MISS for {source.balanser} S{season} voice={voiceKey}");
 
         try
         {
             string url = BuildSourceUrl(source.url, meta, token);
             url += $"&s={season}";
+            if (!string.IsNullOrEmpty(voiceName))
+                url += $"&t={voiceName}";
+
             _onLog?.Invoke($"Stremio episodes: {url}");
 
             string json = await Shared.Services.Http.Get(url, timeoutSeconds: 15);
@@ -258,6 +275,8 @@ public class StremioInvoke
                             followUrl += (followUrl.Contains("?") ? "&" : "?") + "rjson=true";
                         if (!followUrl.Contains("s="))
                             followUrl += $"&s={season}";
+                        if (!string.IsNullOrEmpty(voiceName) && !followUrl.Contains("t="))
+                            followUrl += $"&t={voiceName}";
                         if (!string.IsNullOrEmpty(token) && !followUrl.Contains("token="))
                             followUrl += $"&token={token}";
 
@@ -275,7 +294,12 @@ public class StremioInvoke
             // Save to cache
             if (result != null)
             {
+                _onLog?.Invoke($"Stremio: caching {source.balanser} S{season} voice={voiceKey} for {_init.cacheMinutes} min");
                 _hybridCache.Set(memKey, result, TimeSpan.FromMinutes(_init.cacheMinutes));
+            }
+            else
+            {
+                _onLog?.Invoke($"Stremio: NOT caching {source.balanser} S{season} voice={voiceKey} (result is null)");
             }
 
             return result;
