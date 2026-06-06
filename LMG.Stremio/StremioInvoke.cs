@@ -217,10 +217,15 @@ public class StremioInvoke
     }
 
     /// <summary>
-    /// Get episodes for season from source
+    /// Get episodes for season from source (cached)
     /// </summary>
     public async Task<LampacEpisodeResponse> GetEpisodes(LampacSource source, TmdbMetadata meta, int season, string token)
     {
+        // Check cache first
+        string memKey = $"Stremio:episodes:{source.balanser}:{meta.imdb_id}:{season}";
+        if (_hybridCache.TryGetValue(memKey, out LampacEpisodeResponse cached))
+            return cached;
+
         try
         {
             string url = BuildSourceUrl(source.url, meta, token);
@@ -230,6 +235,8 @@ public class StremioInvoke
             string json = await Shared.Services.Http.Get(url, timeoutSeconds: 15);
             if (string.IsNullOrEmpty(json))
                 return null;
+
+            LampacEpisodeResponse result = null;
 
             // Check if similar
             if (json.Contains("\"type\":\"similar\""))
@@ -256,13 +263,22 @@ public class StremioInvoke
 
                         string followJson = await Shared.Services.Http.Get(followUrl, timeoutSeconds: 15);
                         if (!string.IsNullOrEmpty(followJson))
-                            return JsonConvert.DeserializeObject<LampacEpisodeResponse>(followJson);
+                            result = JsonConvert.DeserializeObject<LampacEpisodeResponse>(followJson);
                     }
                 }
-                return null;
+            }
+            else
+            {
+                result = JsonConvert.DeserializeObject<LampacEpisodeResponse>(json);
             }
 
-            return JsonConvert.DeserializeObject<LampacEpisodeResponse>(json);
+            // Save to cache
+            if (result != null)
+            {
+                _hybridCache.Set(memKey, result, TimeSpan.FromMinutes(_init.cacheMinutes));
+            }
+
+            return result;
         }
         catch (Exception ex)
         {

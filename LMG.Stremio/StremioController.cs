@@ -291,7 +291,11 @@ public class StremioController : BaseController
                 {
                     name = streamName,
                     description = description,
-                    url = streamUrl
+                    url = streamUrl,
+                    behaviorHints = new StremioStreamBehaviorHints
+                    {
+                        bingeGroup = $"lampac-{source.balanser}"
+                    }
                 };
 
                 streams.Add(stream);

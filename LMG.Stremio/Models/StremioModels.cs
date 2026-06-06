@@ -40,6 +40,12 @@ namespace LMG.Stremio.Models
         public string description { get; set; }
         public string url { get; set; }
         public List<StremioSubtitle> subtitles { get; set; }
+        public StremioStreamBehaviorHints behaviorHints { get; set; }
+    }
+
+    public class StremioStreamBehaviorHints
+    {
+        public string bingeGroup { get; set; }
     }
 
     public class StremioSubtitle
