@@ -13,6 +13,13 @@ namespace LMG.Stremio.Controllers;
 /// </summary>
 public class StremioController : BaseController
 {
+    private static string GetVoiceHash(string voice)
+    {
+        using var md5 = System.Security.Cryptography.MD5.Create();
+        var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(voice ?? ""));
+        return BitConverter.ToString(hash).Replace("-", "").Substring(0, 8).ToLower();
+    }
+
     private static void OnLog(string message)
     {
         Console.WriteLine(message);
@@ -313,7 +320,7 @@ public class StremioController : BaseController
                                 url = streamUrl,
                                 behaviorHints = new StremioStreamBehaviorHints
                                 {
-                                    bingeGroup = $"lampac-{source.balanser}-{voice.name}"
+                                    bingeGroup = $"lampac-{source.balanser}-{GetVoiceHash(voice.name)}"
                                 }
                             };
 
@@ -363,7 +370,7 @@ public class StremioController : BaseController
                         url = streamUrl,
                         behaviorHints = new StremioStreamBehaviorHints
                         {
-                            bingeGroup = $"lampac-{source.balanser}"
+                            bingeGroup = $"lampac-{source.balanser}-{GetVoiceHash("default")}"
                         }
                     };
 
