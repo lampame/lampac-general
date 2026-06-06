@@ -15,8 +15,8 @@ General modules for Lampac
 
 Manifest
 
-/stremio/manifest.json?token=batya
-/stremio/batya/manifest.json
+/stremio/manifest.json?token=father
+/stremio/father/manifest.json
 
 ```json
 {
