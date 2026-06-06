@@ -4,6 +4,7 @@ using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using Shared.Models.Base;
 using Shared.Models.Events;
+using Microsoft.AspNetCore.Http;
 
 namespace LMG.Stremio;
 
@@ -30,6 +31,31 @@ public class ModInit : IModuleLoaded
     {
         updateConf();
         Shared.Models.Events.EventListener.UpdateInitFile += updateConf;
+
+        // Register middleware to extract token from URL path
+        baseconf.app.Use(async (context, next) =>
+        {
+            var path = context.Request.Path.Value;
+            if (path != null && path.StartsWith("/stremio/", StringComparison.OrdinalIgnoreCase))
+            {
+                // Extract token from path: /stremio/{token}/...
+                var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (segments.Length >= 2 && segments[0].Equals("stremio", StringComparison.OrdinalIgnoreCase))
+                {
+                    string token = segments[1];
+                    // Add token to query string if not already present
+                    if (!context.Request.Query.ContainsKey("token"))
+                    {
+                        var query = context.Request.QueryString.Value ?? "";
+                        var newQuery = string.IsNullOrEmpty(query)
+                            ? $"?token={token}"
+                            : $"{query}&token={token}";
+                        context.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString(newQuery);
+                    }
+                }
+            }
+            await next();
+        });
     }
 
     public void Dispose()
