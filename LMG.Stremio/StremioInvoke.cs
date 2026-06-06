@@ -179,13 +179,18 @@ public class StremioInvoke
             // Check if similar
             if (json.Contains("\"type\":\"similar\""))
             {
+                _onLog?.Invoke($"Stremio: {source.balanser} returned similar, searching for year {meta.year}");
                 var similarResponse = JsonConvert.DeserializeObject<LampacSimilarResponse>(json);
                 if (similarResponse?.data?.Count > 0)
                 {
                     // Find match by year
-                    var match = similarResponse.data.FirstOrDefault(x => x.year == meta.year)
-                             ?? similarResponse.data.FirstOrDefault();
-                    if (match != null && !string.IsNullOrEmpty(match.url))
+                    var match = similarResponse.data.FirstOrDefault(x => x.year == meta.year);
+                    if (match == null)
+                    {
+                        _onLog?.Invoke($"Stremio: no match by year for {source.balanser}, available years: {string.Join(",", similarResponse.data.Select(x => x.year))}");
+                        return null;
+                    }
+                    if (!string.IsNullOrEmpty(match.url))
                     {
                         // Follow URL
                         string followUrl = match.url;
@@ -229,12 +234,17 @@ public class StremioInvoke
             // Check if similar
             if (json.Contains("\"type\":\"similar\""))
             {
+                _onLog?.Invoke($"Stremio: {source.balanser} returned similar for series, searching for year {meta.year}");
                 var similarResponse = JsonConvert.DeserializeObject<LampacSimilarResponse>(json);
                 if (similarResponse?.data?.Count > 0)
                 {
-                    var match = similarResponse.data.FirstOrDefault(x => x.year == meta.year)
-                             ?? similarResponse.data.FirstOrDefault();
-                    if (match != null && !string.IsNullOrEmpty(match.url))
+                    var match = similarResponse.data.FirstOrDefault(x => x.year == meta.year);
+                    if (match == null)
+                    {
+                        _onLog?.Invoke($"Stremio: no match by year for {source.balanser} series, available years: {string.Join(",", similarResponse.data.Select(x => x.year))}");
+                        return null;
+                    }
+                    if (!string.IsNullOrEmpty(match.url))
                     {
                         string followUrl = match.url;
                         if (!followUrl.Contains("rjson=true"))
@@ -287,6 +297,34 @@ public class StremioInvoke
         catch (Exception ex)
         {
             _onLog?.Invoke($"Stremio GetEpisodeStream error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Get real stream URL from call endpoint
+    /// </summary>
+    public async Task<LampacVideoItem> GetCallStream(string callUrl, string token)
+    {
+        try
+        {
+            string url = callUrl;
+            if (!url.Contains("rjson=true"))
+                url += (url.Contains("?") ? "&" : "?") + "rjson=true";
+            if (!string.IsNullOrEmpty(token) && !url.Contains("token="))
+                url += $"&token={token}";
+
+            _onLog?.Invoke($"Stremio call stream: {url}");
+
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 15);
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            return JsonConvert.DeserializeObject<LampacVideoItem>(json);
+        }
+        catch (Exception ex)
+        {
+            _onLog?.Invoke($"Stremio GetCallStream error: {ex.Message}");
             return null;
         }
     }

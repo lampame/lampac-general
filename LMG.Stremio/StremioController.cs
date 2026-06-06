@@ -17,6 +17,12 @@ public class StremioController : BaseController
     {
         Console.WriteLine(message);
     }
+
+    // Anime-only sources to filter out for non-anime content
+    private static readonly HashSet<string> AnimeSources = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "lme_mikai", "lme_nmoonanime", "lme_animeon", "lme_unimay", "lme_starlight"
+    };
     /// <summary>
     /// Stremio addon manifest
     /// </summary>
@@ -72,14 +78,37 @@ public class StremioController : BaseController
         {
             try
             {
+                // Skip anime-only sources for movies
+                if (AnimeSources.Contains(source.balanser))
+                {
+                    OnLog($"Stremio: skipping anime source {source.name} for movie");
+                    continue;
+                }
+
+                OnLog($"Stremio: processing source {source.name} ({source.balanser})");
                 var movieResponse = await invoke.GetMovieStreams(source, meta, token);
                 if (movieResponse?.data == null || movieResponse.data.Count == 0)
+                {
+                    OnLog($"Stremio: no data from {source.name}");
                     continue;
+                }
+
+                OnLog($"Stremio: got {movieResponse.data.Count} items from {source.name}");
 
                 foreach (var item in movieResponse.data)
                 {
                     if (string.IsNullOrEmpty(item.url))
                         continue;
+
+                    // Resolve call method to get real stream URL
+                    string streamUrl = item.url;
+                    if (item.method == "call")
+                    {
+                        var callResult = await invoke.GetCallStream(item.url, token);
+                        if (callResult == null || string.IsNullOrEmpty(callResult.url))
+                            continue;
+                        streamUrl = callResult.url;
+                    }
 
                     string streamName = source.name;
                     if (!string.IsNullOrEmpty(item.translate))
@@ -95,7 +124,7 @@ public class StremioController : BaseController
                     {
                         name = streamName,
                         description = description,
-                        url = item.url
+                        url = streamUrl
                     };
 
                     // Add subtitles if available
@@ -173,10 +202,24 @@ public class StremioController : BaseController
         {
             try
             {
+                // Skip anime-only sources for non-anime content
+                if (AnimeSources.Contains(source.balanser))
+                {
+                    OnLog($"Stremio: skipping anime source {source.name} for series");
+                    continue;
+                }
+
+                OnLog($"Stremio: processing source {source.name} ({source.balanser})");
+
                 // Get episodes for season
                 var episodesResponse = await invoke.GetEpisodes(source, meta, season, token);
                 if (episodesResponse?.data == null || episodesResponse.data.Count == 0)
+                {
+                    OnLog($"Stremio: no episodes from {source.name}");
                     continue;
+                }
+
+                OnLog($"Stremio: got {episodesResponse.data.Count} episodes from {source.name}");
 
                 // Find episode
                 var ep = episodesResponse.data.FirstOrDefault(x => x.e == episode);
@@ -184,9 +227,21 @@ public class StremioController : BaseController
                     continue;
 
                 // Get episode stream
-                var video = await invoke.GetEpisodeStream(ep.url, token);
-                if (video == null || string.IsNullOrEmpty(video.url))
-                    continue;
+                string streamUrl;
+                if (ep.method == "call")
+                {
+                    var callResult = await invoke.GetCallStream(ep.url, token);
+                    if (callResult == null || string.IsNullOrEmpty(callResult.url))
+                        continue;
+                    streamUrl = callResult.url;
+                }
+                else
+                {
+                    var video = await invoke.GetEpisodeStream(ep.url, token);
+                    if (video == null || string.IsNullOrEmpty(video.url))
+                        continue;
+                    streamUrl = video.url;
+                }
 
                 string streamName = source.name;
                 string description = $"S{season:D2}E{episode:D2}";
@@ -195,22 +250,8 @@ public class StremioController : BaseController
                 {
                     name = streamName,
                     description = description,
-                    url = video.url
+                    url = streamUrl
                 };
-
-                // Add subtitles if available
-                if (video.subtitles?.Count > 0)
-                {
-                    stream.subtitles = video.subtitles
-                        .Where(s => !string.IsNullOrEmpty(s.url))
-                        .Select((s, i) => new StremioSubtitle
-                        {
-                            id = $"sub_{i}",
-                            url = s.url,
-                            lang = s.label ?? "Unknown"
-                        })
-                        .ToList();
-                }
 
                 streams.Add(stream);
             }
