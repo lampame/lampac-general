@@ -387,12 +387,12 @@ public class StremioController : BaseController
     }
 
     /// <summary>
-    /// Series metadata with embedded streams for each episode (bypasses series limits)
+    /// Metadata handler for movie and series (bypasses series limits)
     /// </summary>
     [HttpGet]
-    [Route("stremio/{token}/meta/series/{id}.json")]
-    [Route("stremio/meta/series/{id}.json")]
-    public async Task<ActionResult> MetaSeries(string id, string token = null)
+    [Route("stremio/{token}/meta/{type}/{id}.json")]
+    [Route("stremio/meta/{type}/{id}.json")]
+    public async Task<ActionResult> Meta(string type, string id, string token = null)
     {
         Response.Headers["Access-Control-Allow-Origin"] = "*";
         Response.Headers["Access-Control-Allow-Methods"] = "GET";
@@ -409,20 +409,45 @@ public class StremioController : BaseController
 
         var invoke = new StremioInvoke(init, hybridCache, OnLog, host);
 
-        // Resolve metadata
-        var meta = await invoke.ResolveMetadata(id, 1);
-        if (meta == null)
+        if (type == "movie")
         {
-            OnLog($"Stremio Meta: metadata not found for {id}");
-            return Json(new StremioMetaResponse { meta = new StremioMeta { id = id, name = "Unknown Show" } });
+            var meta = await invoke.ResolveMetadata(id, 0);
+            if (meta == null)
+            {
+                OnLog($"Stremio Meta Movie: metadata not found for {id}");
+                return Json(new StremioMetaResponse { meta = new StremioMeta { id = id, type = "movie", name = "Unknown Movie" } });
+            }
+
+            var metaResponse = new StremioMetaResponse
+            {
+                meta = new StremioMeta
+                {
+                    id = id,
+                    type = "movie",
+                    name = meta.title ?? "Unknown Movie"
+                }
+            };
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(metaResponse, new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
+            return Content(json, "application/json; charset=utf-8");
+        }
+
+        if (type != "series")
+            return Json(new StremioMetaResponse());
+
+        // Resolve metadata for series
+        var seriesMeta = await invoke.ResolveMetadata(id, 1);
+        if (seriesMeta == null)
+        {
+            OnLog($"Stremio Meta Series: metadata not found for {id}");
+            return Json(new StremioMetaResponse { meta = new StremioMeta { id = id, type = "series", name = "Unknown Show" } });
         }
 
         // Get TV details from TMDB
-        var tvDetails = await invoke.GetTvDetails(meta.tmdb_id);
+        var tvDetails = await invoke.GetTvDetails(seriesMeta.tmdb_id);
         if (tvDetails == null || tvDetails.seasons == null)
         {
-            OnLog($"Stremio Meta: TMDB details not found for tv/{meta.tmdb_id}");
-            return Json(new StremioMetaResponse { meta = new StremioMeta { id = id, name = meta.title ?? "Unknown Show" } });
+            OnLog($"Stremio Meta Series: TMDB details not found for tv/{seriesMeta.tmdb_id}");
+            return Json(new StremioMetaResponse { meta = new StremioMeta { id = id, type = "series", name = seriesMeta.title ?? "Unknown Show" } });
         }
 
         // Limit to top 10 seasons to prevent overload
@@ -433,11 +458,11 @@ public class StremioController : BaseController
             .ToList();
 
         // Fetch TMDB season details in parallel to get exact episode names and air dates
-        var tmdbSeasonTasks = seasonsToFetch.Select(s => invoke.GetTmdbSeasonDetails(meta.tmdb_id, s.season_number)).ToList();
+        var tmdbSeasonTasks = seasonsToFetch.Select(s => invoke.GetTmdbSeasonDetails(seriesMeta.tmdb_id, s.season_number)).ToList();
         var tmdbSeasons = await Task.WhenAll(tmdbSeasonTasks);
 
         // Get sources
-        var sources = await invoke.GetSources(meta, token);
+        var sources = await invoke.GetSources(seriesMeta, token);
         var videos = new List<StremioVideo>();
 
         if (sources != null && sources.Count > 0)
@@ -451,7 +476,7 @@ public class StremioController : BaseController
 
                 foreach (var season in seasonsToFetch)
                 {
-                    var task = invoke.GetEpisodes(source, meta, season.season_number, token);
+                    var task = invoke.GetEpisodes(source, seriesMeta, season.season_number, token);
                     sourceSeasonTasks.Add((source, season.season_number, task));
                 }
             }
@@ -468,7 +493,7 @@ public class StremioController : BaseController
                     {
                         foreach (var voice in resp.voice.Take(3))
                         {
-                            var task = invoke.GetEpisodesWithVoice(item.source, meta, item.seasonNumber, voice.name, token);
+                            var task = invoke.GetEpisodesWithVoice(item.source, seriesMeta, item.seasonNumber, voice.name, token);
                             voiceTasks.Add((item.source, item.seasonNumber, voice.name, task));
                         }
                     }
@@ -611,13 +636,88 @@ public class StremioController : BaseController
             meta = new StremioMeta
             {
                 id = id,
-                name = tvDetails.name ?? meta.title ?? "Unknown Show",
+                type = "series",
+                name = tvDetails.name ?? seriesMeta.title ?? "Unknown Show",
                 videos = videos
             }
         };
 
         var json = Newtonsoft.Json.JsonConvert.SerializeObject(metaResponse, new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
         return Content(json, "application/json; charset=utf-8");
+    }
+
+    /// <summary>
+    /// Stremio catalog search endpoint
+    /// </summary>
+    [HttpGet]
+    [Route("stremio/{token}/catalog/{type}/{id}.json")]
+    [Route("stremio/catalog/{type}/{id}.json")]
+    [Route("stremio/{token}/catalog/{type}/{id}/search={query}.json")]
+    [Route("stremio/catalog/{type}/{id}/search={query}.json")]
+    public async Task<ActionResult> Catalog(string type, string id, string query = null, string token = null)
+    {
+        Response.Headers["Access-Control-Allow-Origin"] = "*";
+        Response.Headers["Access-Control-Allow-Methods"] = "GET";
+        Response.Headers["Access-Control-Allow-Headers"] = "*";
+
+        var catalogResponse = new StremioCatalogResponse();
+
+        if (string.IsNullOrEmpty(query))
+            return Json(catalogResponse);
+
+        query = query.Replace(".json", "", StringComparison.OrdinalIgnoreCase);
+
+        var init = ModInit.conf;
+        if (init == null)
+            return Json(catalogResponse);
+
+        var invoke = new StremioInvoke(init, hybridCache, OnLog, host);
+
+        try
+        {
+            if (type == "series" && id == "lampac_search_series")
+            {
+                var searchTv = await invoke.SearchTv(query);
+                if (searchTv?.results != null)
+                {
+                    foreach (var item in searchTv.results.Take(20))
+                    {
+                        catalogResponse.metas.Add(new StremioCatalogItem
+                        {
+                            id = $"tmdb:{item.id}",
+                            type = "series",
+                            name = item.name,
+                            poster = string.IsNullOrEmpty(item.poster_path) ? null : $"https://image.tmdb.org/t/p/w500{item.poster_path}",
+                            description = item.overview
+                        });
+                    }
+                }
+            }
+            else if (type == "movie" && id == "lampac_search_movie")
+            {
+                var searchMovies = await invoke.SearchMovies(query);
+                if (searchMovies?.results != null)
+                {
+                    foreach (var item in searchMovies.results.Take(20))
+                    {
+                        catalogResponse.metas.Add(new StremioCatalogItem
+                        {
+                            id = $"tmdb:{item.id}",
+                            type = "movie",
+                            name = item.title,
+                            poster = string.IsNullOrEmpty(item.poster_path) ? null : $"https://image.tmdb.org/t/p/w500{item.poster_path}",
+                            description = item.overview
+                        });
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            OnLog($"Stremio Catalog error: {ex.Message}");
+        }
+
+        return Json(catalogResponse);
     }
 
     /// <summary>

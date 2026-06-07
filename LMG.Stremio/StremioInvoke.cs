@@ -33,48 +33,97 @@ public class StremioInvoke
     /// <summary>
     /// Resolve metadata from IMDB ID via TMDB API + /externalids
     /// </summary>
-    public async Task<TmdbMetadata> ResolveMetadata(string imdbId, int serial)
+    public async Task<TmdbMetadata> ResolveMetadata(string id, int serial)
     {
-        string memKey = $"Stremio:meta:{imdbId}:{serial}";
+        string memKey = $"Stremio:meta:{id}:{serial}";
         if (_hybridCache.TryGetValue(memKey, out TmdbMetadata cached))
             return cached;
 
         try
         {
-            // TMDB find by IMDB ID
-            string tmdbUrl = $"{TMDB_API}/find/{imdbId}?api_key={_init.tmdbApiKey}&external_source=imdb_id";
-            _onLog?.Invoke($"Stremio TMDB: {tmdbUrl}");
-
-            string tmdbJson = await Shared.Services.Http.Get(tmdbUrl, timeoutSeconds: 10);
-            if (string.IsNullOrEmpty(tmdbJson))
-                return null;
-
-            var tmdbResponse = JsonConvert.DeserializeObject<TmdbFindResponse>(tmdbJson);
-            if (tmdbResponse == null)
-                return null;
-
             int tmdbId = 0;
+            string imdbId = null;
             string title = null;
             string originalTitle = null;
             int year = 0;
 
-            if (serial == 1 && tmdbResponse.tv_results?.Count > 0)
+            if (id.StartsWith("tmdb:", StringComparison.OrdinalIgnoreCase))
             {
-                var tv = tmdbResponse.tv_results[0];
-                tmdbId = tv.id;
-                title = tv.name;
-                originalTitle = tv.original_name;
-                if (!string.IsNullOrEmpty(tv.first_air_date) && tv.first_air_date.Length >= 4)
-                    int.TryParse(tv.first_air_date.Substring(0, 4), out year);
+                if (!int.TryParse(id.Substring(5), out int parsedTmdbId))
+                    return null;
+
+                tmdbId = parsedTmdbId;
+
+                if (serial == 1)
+                {
+                    // Fetch TV Details from TMDB (with external ids)
+                    string url = $"{TMDB_API}/tv/{tmdbId}?api_key={_init.tmdbApiKey}&append_to_response=external_ids&language=uk-UA";
+                    _onLog?.Invoke($"Stremio TMDB TV details: {url}");
+                    string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
+                    if (!string.IsNullOrEmpty(json))
+                    {
+                        var tvDetails = JsonConvert.DeserializeObject<TmdbTvDetails>(json);
+                        if (tvDetails != null)
+                        {
+                            title = tvDetails.name;
+                            imdbId = tvDetails.external_ids?.imdb_id;
+                        }
+                    }
+                }
+                else
+                {
+                    // Fetch Movie Details from TMDB (contains imdb_id in root)
+                    string url = $"{TMDB_API}/movie/{tmdbId}?api_key={_init.tmdbApiKey}&language=uk-UA";
+                    _onLog?.Invoke($"Stremio TMDB Movie details: {url}");
+                    string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
+                    if (!string.IsNullOrEmpty(json))
+                    {
+                        var movieDetails = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(json);
+                        if (movieDetails != null)
+                        {
+                            title = movieDetails.Value<string>("title");
+                            originalTitle = movieDetails.Value<string>("original_title");
+                            imdbId = movieDetails.Value<string>("imdb_id");
+                            string releaseDate = movieDetails.Value<string>("release_date");
+                            if (!string.IsNullOrEmpty(releaseDate) && releaseDate.Length >= 4)
+                                int.TryParse(releaseDate.Substring(0, 4), out year);
+                        }
+                    }
+                }
             }
-            else if (tmdbResponse.movie_results?.Count > 0)
+            else
             {
-                var movie = tmdbResponse.movie_results[0];
-                tmdbId = movie.id;
-                title = movie.title;
-                originalTitle = movie.original_title;
-                if (!string.IsNullOrEmpty(movie.release_date) && movie.release_date.Length >= 4)
-                    int.TryParse(movie.release_date.Substring(0, 4), out year);
+                // TMDB find by IMDB ID
+                imdbId = id;
+                string tmdbUrl = $"{TMDB_API}/find/{imdbId}?api_key={_init.tmdbApiKey}&external_source=imdb_id";
+                _onLog?.Invoke($"Stremio TMDB find: {tmdbUrl}");
+
+                string tmdbJson = await Shared.Services.Http.Get(tmdbUrl, timeoutSeconds: 10);
+                if (string.IsNullOrEmpty(tmdbJson))
+                    return null;
+
+                var tmdbResponse = JsonConvert.DeserializeObject<TmdbFindResponse>(tmdbJson);
+                if (tmdbResponse == null)
+                    return null;
+
+                if (serial == 1 && tmdbResponse.tv_results?.Count > 0)
+                {
+                    var tv = tmdbResponse.tv_results[0];
+                    tmdbId = tv.id;
+                    title = tv.name;
+                    originalTitle = tv.original_name;
+                    if (!string.IsNullOrEmpty(tv.first_air_date) && tv.first_air_date.Length >= 4)
+                        int.TryParse(tv.first_air_date.Substring(0, 4), out year);
+                }
+                else if (tmdbResponse.movie_results?.Count > 0)
+                {
+                    var movie = tmdbResponse.movie_results[0];
+                    tmdbId = movie.id;
+                    title = movie.title;
+                    originalTitle = movie.original_title;
+                    if (!string.IsNullOrEmpty(movie.release_date) && movie.release_date.Length >= 4)
+                        int.TryParse(movie.release_date.Substring(0, 4), out year);
+                }
             }
 
             if (tmdbId == 0)
@@ -82,19 +131,22 @@ public class StremioInvoke
 
             // Get kinopoisk_id from Lampac /externalids
             string kpId = null;
-            try
+            if (!string.IsNullOrEmpty(imdbId))
             {
-                string extUrl = $"{_lampacHost}/externalids?imdb_id={imdbId}&serial={serial}";
-                string extJson = await Shared.Services.Http.Get(extUrl, timeoutSeconds: 5);
-                if (!string.IsNullOrEmpty(extJson))
+                try
                 {
-                    var extIds = JsonConvert.DeserializeObject<LampacExternalIds>(extJson);
-                    kpId = extIds?.kinopoisk_id;
+                    string extUrl = $"{_lampacHost}/externalids?imdb_id={imdbId}&serial={serial}";
+                    string extJson = await Shared.Services.Http.Get(extUrl, timeoutSeconds: 5);
+                    if (!string.IsNullOrEmpty(extJson))
+                    {
+                        var extIds = JsonConvert.DeserializeObject<LampacExternalIds>(extJson);
+                        kpId = extIds?.kinopoisk_id;
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _onLog?.Invoke($"Stremio externalids error: {ex.Message}");
+                catch (Exception ex)
+                {
+                    _onLog?.Invoke($"Stremio externalids error: {ex.Message}");
+                }
             }
 
             var metadata = new TmdbMetadata
@@ -146,11 +198,15 @@ public class StremioInvoke
 
             string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
             if (string.IsNullOrEmpty(json))
-                return null;
+            {
+                var empty = new List<LampacSource>();
+                _hybridCache.Set(memKey, empty, TimeSpan.FromMinutes(_init.cacheMinutes));
+                return empty;
+            }
 
             var sources = JsonConvert.DeserializeObject<List<LampacSource>>(json);
-            if (sources == null || sources.Count == 0)
-                return null;
+            if (sources == null)
+                sources = new List<LampacSource>();
 
             _hybridCache.Set(memKey, sources, TimeSpan.FromMinutes(_init.cacheMinutes));
             return sources;
@@ -158,7 +214,9 @@ public class StremioInvoke
         catch (Exception ex)
         {
             _onLog?.Invoke($"Stremio GetSources error: {ex.Message}");
-            return null;
+            var empty = new List<LampacSource>();
+            _hybridCache.Set(memKey, empty, TimeSpan.FromMinutes(_init.cacheMinutes));
+            return empty;
         }
     }
 
@@ -292,22 +350,23 @@ public class StremioInvoke
             }
 
             // Save to cache
-            if (result != null)
+            if (result == null)
             {
-                _onLog?.Invoke($"Stremio: caching {source.balanser} S{season} voice={voiceKey} for {_init.cacheMinutes} min");
-                _hybridCache.Set(memKey, result, TimeSpan.FromMinutes(_init.cacheMinutes));
+                result = new LampacEpisodeResponse();
             }
-            else
-            {
-                _onLog?.Invoke($"Stremio: NOT caching {source.balanser} S{season} voice={voiceKey} (result is null)");
-            }
+            result.data ??= new List<LampacEpisodeItem>();
+
+            _onLog?.Invoke($"Stremio: caching {source.balanser} S{season} voice={voiceKey} (count={result.data.Count}) for {_init.cacheMinutes} min");
+            _hybridCache.Set(memKey, result, TimeSpan.FromMinutes(_init.cacheMinutes));
 
             return result;
         }
         catch (Exception ex)
         {
             _onLog?.Invoke($"Stremio GetEpisodes error: {ex.Message}");
-            return null;
+            var errorResult = new LampacEpisodeResponse { data = new List<LampacEpisodeItem>() };
+            _hybridCache.Set(memKey, errorResult, TimeSpan.FromMinutes(_init.cacheMinutes));
+            return errorResult;
         }
     }
 
@@ -410,7 +469,7 @@ public class StremioInvoke
 
         try
         {
-            string url = $"{TMDB_API}/tv/{tmdbId}/season/{season}?api_key={_init.tmdbApiKey}&language=uk-UA";
+            string url = $"{TMDB_API}/tv/{tmdbId}/season/{season}?api_key={_init.tmdbApiKey}&append_to_response=external_ids&language=uk-UA";
             _onLog?.Invoke($"Stremio TMDB Season: {url}");
 
             string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
@@ -425,6 +484,66 @@ public class StremioInvoke
         catch (Exception ex)
         {
             _onLog?.Invoke($"Stremio GetTmdbSeasonDetails error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Search TV series on TMDB (cached for 1 hour)
+    /// </summary>
+    public async Task<TmdbSearchTvResponse> SearchTv(string query)
+    {
+        string memKey = $"Stremio:search_tv:{query}";
+        if (_hybridCache.TryGetValue(memKey, out TmdbSearchTvResponse cached))
+            return cached;
+
+        try
+        {
+            string url = $"{TMDB_API}/search/tv?api_key={_init.tmdbApiKey}&query={HttpUtility.UrlEncode(query)}&language=uk-UA";
+            _onLog?.Invoke($"Stremio TMDB TV search: {url}");
+
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            var searchResult = JsonConvert.DeserializeObject<TmdbSearchTvResponse>(json);
+            if (searchResult != null)
+                _hybridCache.Set(memKey, searchResult, TimeSpan.FromHours(1));
+            return searchResult;
+        }
+        catch (Exception ex)
+        {
+            _onLog?.Invoke($"Stremio SearchTv error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Search movies on TMDB (cached for 1 hour)
+    /// </summary>
+    public async Task<TmdbSearchMovieResponse> SearchMovies(string query)
+    {
+        string memKey = $"Stremio:search_movie:{query}";
+        if (_hybridCache.TryGetValue(memKey, out TmdbSearchMovieResponse cached))
+            return cached;
+
+        try
+        {
+            string url = $"{TMDB_API}/search/movie?api_key={_init.tmdbApiKey}&query={HttpUtility.UrlEncode(query)}&language=uk-UA";
+            _onLog?.Invoke($"Stremio TMDB Movie search: {url}");
+
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            var searchResult = JsonConvert.DeserializeObject<TmdbSearchMovieResponse>(json);
+            if (searchResult != null)
+                _hybridCache.Set(memKey, searchResult, TimeSpan.FromHours(1));
+            return searchResult;
+        }
+        catch (Exception ex)
+        {
+            _onLog?.Invoke($"Stremio SearchMovies error: {ex.Message}");
             return null;
         }
     }

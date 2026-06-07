@@ -12,15 +12,35 @@ namespace LMG.Stremio.Models
         public string description { get; set; } = "Lampac online sources via Stremio";
         public object[] resources { get; set; } = [
             "stream",
+            "catalog",
             new {
                 name = "meta",
-                types = new[] { "series" },
-                idPrefixes = new[] { "tt" }
+                types = new[] { "movie", "series" },
+                idPrefixes = new[] { "tt", "tmdb" }
             }
         ];
         public string[] types { get; set; } = ["movie", "series"];
-        public string[] idPrefixes { get; set; } = ["tt"];
-        public List<StremioCatalog> catalogs { get; set; } = [];
+        public string[] idPrefixes { get; set; } = ["tt", "tmdb"];
+        public List<StremioCatalog> catalogs { get; set; } = [
+            new StremioCatalog
+            {
+                type = "series",
+                id = "lampac_search_series",
+                name = "Lampac Series",
+                extra = [
+                    new StremioCatalogExtra { name = "search", isRequired = true }
+                ]
+            },
+            new StremioCatalog
+            {
+                type = "movie",
+                id = "lampac_search_movie",
+                name = "Lampac Movies",
+                extra = [
+                    new StremioCatalogExtra { name = "search", isRequired = true }
+                ]
+            }
+        ];
         public StremioBehaviorHints behaviorHints { get; set; } = new();
     }
 
@@ -29,6 +49,13 @@ namespace LMG.Stremio.Models
         public string type { get; set; }
         public string id { get; set; }
         public string name { get; set; }
+        public List<StremioCatalogExtra> extra { get; set; } = [];
+    }
+
+    public class StremioCatalogExtra
+    {
+        public string name { get; set; }
+        public bool isRequired { get; set; } = true;
     }
 
     public class StremioBehaviorHints
@@ -255,6 +282,12 @@ namespace LMG.Stremio.Models
     {
         public string name { get; set; }
         public List<TmdbTvSeason> seasons { get; set; }
+        public TmdbExternalIds external_ids { get; set; }
+    }
+
+    public class TmdbExternalIds
+    {
+        public string imdb_id { get; set; }
     }
 
     public class TmdbTvSeason
@@ -274,6 +307,54 @@ namespace LMG.Stremio.Models
         public int episode_number { get; set; }
         public string name { get; set; }
         public string air_date { get; set; }
+    }
+
+    #endregion
+
+    #region Stremio Catalog Responses
+
+    public class StremioCatalogResponse
+    {
+        public List<StremioCatalogItem> metas { get; set; } = [];
+    }
+
+    public class StremioCatalogItem
+    {
+        public string id { get; set; }
+        public string type { get; set; }
+        public string name { get; set; }
+        public string poster { get; set; }
+        public string description { get; set; }
+    }
+
+    #endregion
+
+    #region TMDB Search Responses
+
+    public class TmdbSearchTvResponse
+    {
+        public List<TmdbTvResult> results { get; set; }
+    }
+
+    public class TmdbTvResult
+    {
+        public int id { get; set; }
+        public string name { get; set; }
+        public string poster_path { get; set; }
+        public string overview { get; set; }
+    }
+
+    public class TmdbSearchMovieResponse
+    {
+        public List<TmdbMovieResult> results { get; set; }
+    }
+
+    public class TmdbMovieResult
+    {
+        public int id { get; set; }
+        public string title { get; set; }
+        public string poster_path { get; set; }
+        public string overview { get; set; }
     }
 
     #endregion
