@@ -43,8 +43,7 @@ public class ConsumitSubtitleProvider : ISubtitleProvider
         if (!string.IsNullOrEmpty(episode))
             queryParams.Add($"episode={HttpUtility.UrlEncode(episode)}");
 
-        if (!string.IsNullOrEmpty(imdbId))
-            queryParams.Add($"imdbId={HttpUtility.UrlEncode(imdbId)}");
+
 
         var langsToken = providerConfig["langs"];
         if (langsToken is JArray langsArray && langsArray.Count > 0)
