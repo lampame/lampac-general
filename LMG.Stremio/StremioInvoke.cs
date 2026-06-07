@@ -369,6 +369,66 @@ public class StremioInvoke
         }
     }
 
+    /// <summary>
+    /// Get TMDB TV show details to retrieve seasons list (cached)
+    /// </summary>
+    public async Task<TmdbTvDetails> GetTvDetails(int tmdbId)
+    {
+        string memKey = $"Stremio:tv_details:{tmdbId}";
+        if (_hybridCache.TryGetValue(memKey, out TmdbTvDetails cached))
+            return cached;
+
+        try
+        {
+            string url = $"{TMDB_API}/tv/{tmdbId}?api_key={_init.tmdbApiKey}&language=uk-UA";
+            _onLog?.Invoke($"Stremio TMDB TV: {url}");
+
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            var details = JsonConvert.DeserializeObject<TmdbTvDetails>(json);
+            if (details != null)
+                _hybridCache.Set(memKey, details, TimeSpan.FromHours(24));
+            return details;
+        }
+        catch (Exception ex)
+        {
+            _onLog?.Invoke($"Stremio GetTvDetails error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Get TMDB TV season details to retrieve episode list (cached)
+    /// </summary>
+    public async Task<TmdbSeasonDetails> GetTmdbSeasonDetails(int tmdbId, int season)
+    {
+        string memKey = $"Stremio:tmdb_season:{tmdbId}:{season}";
+        if (_hybridCache.TryGetValue(memKey, out TmdbSeasonDetails cached))
+            return cached;
+
+        try
+        {
+            string url = $"{TMDB_API}/tv/{tmdbId}/season/{season}?api_key={_init.tmdbApiKey}&language=uk-UA";
+            _onLog?.Invoke($"Stremio TMDB Season: {url}");
+
+            string json = await Shared.Services.Http.Get(url, timeoutSeconds: 10);
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            var details = JsonConvert.DeserializeObject<TmdbSeasonDetails>(json);
+            if (details != null)
+                _hybridCache.Set(memKey, details, TimeSpan.FromHours(24));
+            return details;
+        }
+        catch (Exception ex)
+        {
+            _onLog?.Invoke($"Stremio GetTmdbSeasonDetails error: {ex.Message}");
+            return null;
+        }
+    }
+
     private string BuildSourceUrl(string sourceUrl, TmdbMetadata meta, string token)
     {
         string url = sourceUrl;

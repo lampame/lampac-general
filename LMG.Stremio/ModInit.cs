@@ -43,14 +43,21 @@ public class ModInit : IModuleLoaded
                 if (segments.Length >= 2 && segments[0].Equals("stremio", System.StringComparison.OrdinalIgnoreCase))
                 {
                     string token = segments[1];
-                    // Add token to query string if not already present
-                    if (!context.Request.Query.ContainsKey("token"))
+                    // Skip action/endpoint names that are not user tokens
+                    if (!token.Equals("play", System.StringComparison.OrdinalIgnoreCase) &&
+                        !token.Equals("manifest.json", System.StringComparison.OrdinalIgnoreCase) &&
+                        !token.Equals("meta", System.StringComparison.OrdinalIgnoreCase) &&
+                        !token.Equals("stream", System.StringComparison.OrdinalIgnoreCase))
                     {
-                        var query = context.Request.QueryString.Value ?? "";
-                        var newQuery = string.IsNullOrEmpty(query)
-                            ? $"?token={token}"
-                            : $"{query}&token={token}";
-                        context.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString(newQuery);
+                        // Add token to query string if not already present
+                        if (!context.Request.Query.ContainsKey("token"))
+                        {
+                            var query = context.Request.QueryString.Value ?? "";
+                            var newQuery = string.IsNullOrEmpty(query)
+                                ? $"?token={token}"
+                                : $"{query}&token={token}";
+                            context.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString(newQuery);
+                        }
                     }
                 }
             }

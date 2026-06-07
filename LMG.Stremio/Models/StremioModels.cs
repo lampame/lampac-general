@@ -7,10 +7,17 @@ namespace LMG.Stremio.Models
     public class StremioManifest
     {
         public string id { get; set; } = "community.lampac";
-        public string version { get; set; } = "1.0.0";
+        public string version { get; set; } = "1.5.0";
         public string name { get; set; } = "Lampac";
         public string description { get; set; } = "Lampac online sources via Stremio";
-        public string[] resources { get; set; } = ["stream"];
+        public object[] resources { get; set; } = [
+            "stream",
+            new {
+                name = "meta",
+                types = new[] { "series" },
+                idPrefixes = new[] { "tt" }
+            }
+        ];
         public string[] types { get; set; } = ["movie", "series"];
         public string[] idPrefixes { get; set; } = ["tt"];
         public List<StremioCatalog> catalogs { get; set; } = [];
@@ -214,4 +221,61 @@ namespace LMG.Stremio.Models
     }
 
     #endregion
+
+    #region Stremio Meta Responses
+
+    public class StremioMetaResponse
+    {
+        public StremioMeta meta { get; set; }
+    }
+
+    public class StremioMeta
+    {
+        public string id { get; set; }
+        public string type { get; set; } = "series";
+        public string name { get; set; }
+        public List<StremioVideo> videos { get; set; } = [];
+    }
+
+    public class StremioVideo
+    {
+        public string id { get; set; }
+        public string title { get; set; }
+        public int season { get; set; }
+        public int episode { get; set; }
+        public string released { get; set; }
+        public List<StremioStream> streams { get; set; } = [];
+    }
+
+    #endregion
+
+    #region TMDB TV Details
+
+    public class TmdbTvDetails
+    {
+        public string name { get; set; }
+        public List<TmdbTvSeason> seasons { get; set; }
+    }
+
+    public class TmdbTvSeason
+    {
+        public int season_number { get; set; }
+        public int episode_count { get; set; }
+        public string air_date { get; set; }
+    }
+
+    public class TmdbSeasonDetails
+    {
+        public List<TmdbEpisode> episodes { get; set; }
+    }
+
+    public class TmdbEpisode
+    {
+        public int episode_number { get; set; }
+        public string name { get; set; }
+        public string air_date { get; set; }
+    }
+
+    #endregion
 }
+

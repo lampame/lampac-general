@@ -385,4 +385,281 @@ public class StremioController : BaseController
 
         return Json(new StremioStreamResponse { streams = streams });
     }
+
+    /// <summary>
+    /// Series metadata with embedded streams for each episode (bypasses series limits)
+    /// </summary>
+    [HttpGet]
+    [Route("stremio/{token}/meta/series/{id}.json")]
+    [Route("stremio/meta/series/{id}.json")]
+    public async Task<ActionResult> MetaSeries(string id, string token = null)
+    {
+        Response.Headers["Access-Control-Allow-Origin"] = "*";
+        Response.Headers["Access-Control-Allow-Methods"] = "GET";
+        Response.Headers["Access-Control-Allow-Headers"] = "*";
+
+        if (string.IsNullOrEmpty(id))
+            return Json(new StremioMetaResponse());
+
+        id = id.Replace(".json", "", StringComparison.OrdinalIgnoreCase);
+
+        var init = ModInit.conf;
+        if (init == null)
+            return Json(new StremioMetaResponse());
+
+        var invoke = new StremioInvoke(init, hybridCache, OnLog, host);
+
+        // Resolve metadata
+        var meta = await invoke.ResolveMetadata(id, 1);
+        if (meta == null)
+        {
+            OnLog($"Stremio Meta: metadata not found for {id}");
+            return Json(new StremioMetaResponse { meta = new StremioMeta { id = id, name = "Unknown Show" } });
+        }
+
+        // Get TV details from TMDB
+        var tvDetails = await invoke.GetTvDetails(meta.tmdb_id);
+        if (tvDetails == null || tvDetails.seasons == null)
+        {
+            OnLog($"Stremio Meta: TMDB details not found for tv/{meta.tmdb_id}");
+            return Json(new StremioMetaResponse { meta = new StremioMeta { id = id, name = meta.title ?? "Unknown Show" } });
+        }
+
+        // Limit to top 10 seasons to prevent overload
+        var seasonsToFetch = tvDetails.seasons
+            .Where(s => s.season_number > 0 && s.episode_count > 0)
+            .OrderBy(s => s.season_number)
+            .Take(10)
+            .ToList();
+
+        // Fetch TMDB season details in parallel to get exact episode names and air dates
+        var tmdbSeasonTasks = seasonsToFetch.Select(s => invoke.GetTmdbSeasonDetails(meta.tmdb_id, s.season_number)).ToList();
+        var tmdbSeasons = await Task.WhenAll(tmdbSeasonTasks);
+
+        // Get sources
+        var sources = await invoke.GetSources(meta, token);
+        var videos = new List<StremioVideo>();
+
+        if (sources != null && sources.Count > 0)
+        {
+            // Phase 1: Fetch default episodes lists for all seasons & sources in parallel
+            var sourceSeasonTasks = new List<(LampacSource source, int seasonNumber, Task<LampacEpisodeResponse> task)>();
+            foreach (var source in sources)
+            {
+                if (AnimeSources.Contains(source.balanser))
+                    continue;
+
+                foreach (var season in seasonsToFetch)
+                {
+                    var task = invoke.GetEpisodes(source, meta, season.season_number, token);
+                    sourceSeasonTasks.Add((source, season.season_number, task));
+                }
+            }
+            await Task.WhenAll(sourceSeasonTasks.Select(x => x.task));
+
+            // Phase 2: Fetch voice-specific lists in parallel (limit to top 3 voices per source/season)
+            var voiceTasks = new List<(LampacSource source, int seasonNumber, string voiceName, Task<LampacEpisodeResponse> task)>();
+            foreach (var item in sourceSeasonTasks)
+            {
+                try
+                {
+                    var resp = await item.task;
+                    if (resp?.voice != null && resp.voice.Count > 0)
+                    {
+                        foreach (var voice in resp.voice.Take(3))
+                        {
+                            var task = invoke.GetEpisodesWithVoice(item.source, meta, item.seasonNumber, voice.name, token);
+                            voiceTasks.Add((item.source, item.seasonNumber, voice.name, task));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    OnLog($"Stremio Meta: error reading phase 1 task: {ex.Message}");
+                }
+            }
+            if (voiceTasks.Count > 0)
+            {
+                await Task.WhenAll(voiceTasks.Select(x => x.task));
+            }
+
+            // Map and build videos array
+            for (int i = 0; i < seasonsToFetch.Count; i++)
+            {
+                var tmdbSeason = tmdbSeasons[i];
+                if (tmdbSeason?.episodes == null || tmdbSeason.episodes.Count == 0)
+                    continue;
+
+                int seasonNum = seasonsToFetch[i].season_number;
+                foreach (var tmdbEpisode in tmdbSeason.episodes)
+                {
+                    int epNum = tmdbEpisode.episode_number;
+                    var videoId = $"{id}:{seasonNum}:{epNum}";
+
+                    string releasedStr = null;
+                    if (!string.IsNullOrEmpty(tmdbEpisode.air_date))
+                    {
+                        if (DateTime.TryParse(tmdbEpisode.air_date, out var airDate))
+                            releasedStr = airDate.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+                    }
+
+                    var video = new StremioVideo
+                    {
+                        id = videoId,
+                        title = tmdbEpisode.name ?? $"Episode {epNum}",
+                        season = seasonNum,
+                        episode = epNum,
+                        released = releasedStr,
+                        streams = new List<StremioStream>()
+                    };
+
+                    // Collect streams from default balancer responses
+                    foreach (var item in sourceSeasonTasks.Where(x => x.seasonNumber == seasonNum))
+                    {
+                        try
+                        {
+                            var resp = await item.task;
+                            if (resp?.data == null)
+                                continue;
+
+                            var epData = resp.data.FirstOrDefault(e => e.e == epNum);
+                            if (epData == null || string.IsNullOrEmpty(epData.url))
+                                continue;
+
+                            string streamName = item.source.name;
+                            string description = $"S{seasonNum:D2}E{epNum:D2}";
+                            string streamUrl = epData.url;
+
+                            if (epData.method == "call")
+                            {
+                                streamUrl = $"{host}/stremio/play?url={Uri.EscapeDataString(epData.url)}";
+                                if (!string.IsNullOrEmpty(token))
+                                    streamUrl += $"&token={token}";
+                            }
+
+                            video.streams.Add(new StremioStream
+                            {
+                                name = streamName,
+                                description = description,
+                                url = streamUrl,
+                                behaviorHints = new StremioStreamBehaviorHints
+                                {
+                                    bingeGroup = $"lampac-{item.source.balanser}-{GetVoiceHash("default")}"
+                                },
+                                subtitles = epData.subtitles?.Where(s => !string.IsNullOrEmpty(s.url)).Select((s, idx) => new StremioSubtitle
+                                {
+                                    id = $"sub_{idx}",
+                                    url = s.url,
+                                    lang = s.label ?? "Unknown"
+                                }).ToList()
+                            });
+                        }
+                        catch {}
+                    }
+
+                    // Collect streams from voice-specific balancer responses
+                    foreach (var item in voiceTasks.Where(x => x.seasonNumber == seasonNum))
+                    {
+                        try
+                        {
+                            var resp = await item.task;
+                            if (resp?.data == null)
+                                continue;
+
+                            var epData = resp.data.FirstOrDefault(e => e.e == epNum);
+                            if (epData == null || string.IsNullOrEmpty(epData.url))
+                                continue;
+
+                            string streamName = $"{item.source.name} - {item.voiceName}";
+                            string description = $"S{seasonNum:D2}E{epNum:D2}";
+                            string streamUrl = epData.url;
+
+                            if (epData.method == "call")
+                            {
+                                streamUrl = $"{host}/stremio/play?url={Uri.EscapeDataString(epData.url)}";
+                                if (!string.IsNullOrEmpty(token))
+                                    streamUrl += $"&token={token}";
+                            }
+
+                            video.streams.Add(new StremioStream
+                            {
+                                name = streamName,
+                                description = description,
+                                url = streamUrl,
+                                behaviorHints = new StremioStreamBehaviorHints
+                                {
+                                    bingeGroup = $"lampac-{item.source.balanser}-{GetVoiceHash(item.voiceName)}"
+                                },
+                                subtitles = epData.subtitles?.Where(s => !string.IsNullOrEmpty(s.url)).Select((s, idx) => new StremioSubtitle
+                                {
+                                    id = $"sub_{idx}",
+                                    url = s.url,
+                                    lang = s.label ?? "Unknown"
+                                }).ToList()
+                            });
+                        }
+                        catch {}
+                    }
+
+                    videos.Add(video);
+                }
+            }
+        }
+
+        var metaResponse = new StremioMetaResponse
+        {
+            meta = new StremioMeta
+            {
+                id = id,
+                name = tvDetails.name ?? meta.title ?? "Unknown Show",
+                videos = videos
+            }
+        };
+
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(metaResponse, new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
+        return Content(json, "application/json; charset=utf-8");
+    }
+
+    /// <summary>
+    /// Dynamic play proxy to resolve 'call' streams on demand
+    /// </summary>
+    [HttpGet]
+    [Route("stremio/play")]
+    [Route("stremio/{token}/play")]
+    public async Task<ActionResult> PlayProxy(string url, string token = null)
+    {
+        Response.Headers["Access-Control-Allow-Origin"] = "*";
+        Response.Headers["Access-Control-Allow-Methods"] = "GET";
+        Response.Headers["Access-Control-Allow-Headers"] = "*";
+
+        if (string.IsNullOrEmpty(url))
+        {
+            OnLog("Stremio play proxy: missing 'url' parameter");
+            return BadRequest("Missing url parameter");
+        }
+
+        var init = ModInit.conf;
+        if (init == null)
+            return BadRequest("Module not initialized");
+
+        try
+        {
+            var invoke = new StremioInvoke(init, hybridCache, OnLog, host);
+            OnLog($"Stremio play proxy: resolving call {url}");
+            var callResult = await invoke.GetCallStream(url, token);
+            if (callResult == null || string.IsNullOrEmpty(callResult.url))
+            {
+                OnLog($"Stremio play proxy: call returned empty for {url}");
+                return NotFound("Stream not found");
+            }
+
+            OnLog($"Stremio play proxy: redirecting to {callResult.url}");
+            return Redirect(callResult.url);
+        }
+        catch (Exception ex)
+        {
+            OnLog($"Stremio play proxy error: {ex.Message}");
+            return StatusCode(500, ex.Message);
+        }
+    }
 }
