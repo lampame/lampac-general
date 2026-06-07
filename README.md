@@ -5,7 +5,6 @@ General modules for Lampac
 - repository: https://github.com/lampame/lampac-general
   branch: main
   modules:
-    - LMG.SubsStreamdata
     - LMG.StreamData
     - LMG.AYCW
     - LMG.Stremio
