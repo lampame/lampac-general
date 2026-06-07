@@ -418,7 +418,7 @@ public class StremioController : BaseController
                 return Json(new StremioMetaResponse { meta = new StremioMeta { id = id, type = "movie", name = "Unknown Movie" } });
             }
 
-            var metaResponse = new StremioMetaResponse
+            var movieMetaResponse = new StremioMetaResponse
             {
                 meta = new StremioMeta
                 {
@@ -427,8 +427,8 @@ public class StremioController : BaseController
                     name = meta.title ?? "Unknown Movie"
                 }
             };
-            var json = Newtonsoft.Json.JsonConvert.SerializeObject(metaResponse, new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
-            return Content(json, "application/json; charset=utf-8");
+            var movieJson = Newtonsoft.Json.JsonConvert.SerializeObject(movieMetaResponse, new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
+            return Content(movieJson, "application/json; charset=utf-8");
         }
 
         if (type != "series")
