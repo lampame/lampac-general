@@ -5,11 +5,13 @@ General modules for Lampac
 - repository: https://github.com/lampame/lampac-general
   branch: main
   modules:
-    - LMG.StreamData
-    - LMG.AYCW
     - LMG.Stremio
     - LMG.Subtitles
 ```
+
+Deprecated modules are preserved in the [Graveyard](https://github.com/lampame/lampac-general/tree/Graveyard) branch:
+- LMG.StreamData
+- LMG.AYCW
 
 ## LMG.Stremio
 
