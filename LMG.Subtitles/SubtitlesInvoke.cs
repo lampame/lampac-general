@@ -14,7 +14,8 @@ public static class SubtitlesInvoke
 
     private static readonly List<ISubtitleProvider> Providers = new()
     {
-        new ConsumitSubtitleProvider()
+        new ConsumitSubtitleProvider(),
+        new SheguSubtitleProvider()
     };
 
     public static async Task<List<SubtitleDto>> FetchSubtitlesAsync(
