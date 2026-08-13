@@ -37,7 +37,7 @@ public class Controller : BaseOnlineController
 
         if (checksearch)
         {
-            if (!StreamHelper.IsCheckOnlineSearchEnabled())
+            if (!IsCheckOnlineSearchEnabled())
                 return OnError("lmg_xullys", refresh_proxy: true);
 
             var searchResults = await invoke.Search(id, title, original_title, year, serial);
@@ -134,7 +134,73 @@ public class Controller : BaseOnlineController
     }
 
     string BuildStreamUrl(OnlinesSettings init, string streamLink)
-        => StreamHelper.BuildStreamUrl(init, streamLink, ModInit.ApnHostProvided, (s, l) => HostStreamProxy(s, l));
+    {
+        string link = StripLampacArgs(streamLink?.Trim());
+        if (string.IsNullOrEmpty(link))
+            return link;
+
+        if (ApnHelper.IsEnabled(init))
+        {
+            if (ModInit.ApnHostProvided || ApnHelper.IsAshdiUrl(link))
+                return ApnHelper.WrapUrl(init, link);
+
+            var noApn = (OnlinesSettings)init.Clone();
+            noApn.apnstream = false;
+            noApn.apn = null;
+            return HostStreamProxy(noApn, link);
+        }
+
+        return HostStreamProxy(init, link);
+    }
+
+    /// <summary>
+    /// Видаляє службові параметри lampac (account_email, uid, nws_id) з URL стріму.
+    /// </summary>
+    private static string StripLampacArgs(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return url;
+
+        string cleaned = LampacArgsRegex.Replace(url, "$1");
+        cleaned = cleaned.Replace("?&", "?").Replace("&&", "&").TrimEnd('?', '&');
+        return cleaned;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex LampacArgsRegex =
+        new System.Text.RegularExpressions.Regex(@"([?&])(account_email|uid|nws_id)=[^&]*", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Перевіряє, чи увімкнено checkOnlineSearch у головному Online.ModInit
+    /// (рефлексія — аналог StreamHelper з LME.Shared, якого немає в LMG.Shared).
+    /// </summary>
+    private static bool IsCheckOnlineSearchEnabled()
+    {
+        try
+        {
+            var onlineType = Type.GetType("Online.ModInit");
+            if (onlineType == null)
+            {
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    onlineType = asm.GetType("Online.ModInit");
+                    if (onlineType != null)
+                        break;
+                }
+            }
+
+            var confField = onlineType?.GetField("conf", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            var conf = confField?.GetValue(null);
+            var checkProp = conf?.GetType().GetProperty("checkOnlineSearch", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+            if (checkProp?.GetValue(conf) is bool enabled)
+                return enabled;
+        }
+        catch
+        {
+        }
+
+        return true;
+    }
 
     private static void OnLog(string message)
     {

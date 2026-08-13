@@ -29,7 +29,7 @@ public class XullysInvoke
     private readonly HttpHydra _httpHydra;
 
     // URL-и підписані S3/R2 (~8h життя) → кеш короткий (5 хв)
-    private const int CacheMinutes = 5;
+    private static readonly TimeSpan CacheExpiration = TimeSpan.FromMinutes(5);
 
     public XullysInvoke(OnlinesSettings init, IHybridCache hybridCache, Action<string> onLog, ProxyManager proxyManager, HttpHydra httpHydra = null)
     {
@@ -38,6 +38,17 @@ public class XullysInvoke
         _onLog = onLog;
         _proxyManager = proxyManager;
         _httpHydra = httpHydra;
+    }
+
+    /// <summary>
+    /// GET з fallback HttpHydra → Http.Get (аналог HttpHelper з LME.Shared, якого немає в LMG.Shared).
+    /// </summary>
+    private async Task<string> GetAsync(string url, List<HeadersModel> headers)
+    {
+        if (_httpHydra != null)
+            return await _httpHydra.Get(url, newheaders: headers);
+
+        return await Http.Get(_init.cors(url), headers: headers, proxy: _proxyManager.Get(), timeoutSeconds: 8);
     }
 
     /// <summary>
@@ -139,7 +150,7 @@ public class XullysInvoke
             };
 
             _onLog?.Invoke($"Xullys downloads: {url}");
-            string response = await HttpHelper.GetAsync(_httpHydra, _init, url, headers, _proxyManager);
+            string response = await GetAsync(url, headers);
             if (string.IsNullOrEmpty(response))
                 return null;
 
@@ -147,11 +158,11 @@ public class XullysInvoke
             if (payload == null || !payload.ok || payload.downloads == null || payload.downloads.Count == 0)
             {
                 // Кешуємо порожній результат, щоб не молотити API
-                _hybridCache.Set(memKey, new List<XullysDownload>(), CacheHelper.CacheTime(CacheMinutes, init: _init));
+                _hybridCache.Set(memKey, new List<XullysDownload>(), CacheExpiration);
                 return new List<XullysDownload>();
             }
 
-            _hybridCache.Set(memKey, payload.downloads, CacheHelper.CacheTime(CacheMinutes, init: _init));
+            _hybridCache.Set(memKey, payload.downloads, CacheExpiration);
             return payload.downloads;
         }
         catch (Exception ex)
